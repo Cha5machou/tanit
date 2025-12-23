@@ -188,16 +188,16 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 Avant de tester, vérifiez que :
 
-- [ ] Projet Firebase créé
-- [ ] Firebase Authentication activé
-- [ ] Google Sign-In activé et configuré
-- [ ] Facebook Sign-In activé et configuré (optionnel)
-- [ ] Cloud Firestore activé
-- [ ] Règles Firestore configurées
-- [ ] Clé privée Admin SDK téléchargée (backend)
-- [ ] Variables d'environnement backend configurées
-- [ ] Variables d'environnement frontend configurées
-- [ ] Fichier `.env` ajouté au `.gitignore`
+- [ x ] Projet Firebase créé
+- [ x ] Firebase Authentication activé
+- [ x ] Google Sign-In activé et configuré
+- [ x ] Facebook Sign-In activé et configuré (optionnel)
+- [ x ] Cloud Firestore activé
+- [  ] Règles Firestore configurées
+- [ x ] Clé privée Admin SDK téléchargée (backend)
+- [ x ] Variables d'environnement backend configurées
+- [ x ] Variables d'environnement frontend configurées
+- [ x ] Fichier `.env` ajouté au `.gitignore`
 
 ---
 
