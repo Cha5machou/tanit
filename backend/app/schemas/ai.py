@@ -5,7 +5,8 @@ from datetime import datetime
 
 # File Management Schemas
 class FileUploadResponse(BaseModel):
-    filename: str
+    filename: str  # Unique filename with timestamp and UUID
+    original_filename: Optional[str] = None  # Original filename before adding prefix
     path: str
     size: int
     content_type: str
@@ -14,7 +15,8 @@ class FileUploadResponse(BaseModel):
 
 
 class FileInfo(BaseModel):
-    filename: str
+    filename: str  # Unique filename stored in GCS
+    original_filename: Optional[str] = None  # Original filename (extracted from unique filename)
     path: str
     size: int
     content_type: str
@@ -23,7 +25,8 @@ class FileInfo(BaseModel):
 
 
 class FileContent(BaseModel):
-    filename: str
+    filename: str  # Unique filename stored in GCS
+    original_filename: Optional[str] = None  # Original filename (extracted from unique filename)
     path: str
     content: str
     size: int
@@ -38,6 +41,9 @@ class AgentConfig(BaseModel):
     llm_provider: Literal["openai", "gemini"] = Field(..., description="LLM provider")
     embedding_model: Optional[str] = Field(None, description="Specific embedding model")
     llm_model: Optional[str] = Field(None, description="Specific LLM model")
+    system_prompt: Optional[str] = Field(None, description="System prompt for the AI agent")
+    chunk_size: Optional[int] = Field(1000, description="Chunk size for text splitting")
+    chunk_overlap: Optional[int] = Field(200, description="Chunk overlap for text splitting")
 
 
 class AgentConfigResponse(BaseModel):
@@ -45,6 +51,9 @@ class AgentConfigResponse(BaseModel):
     llm_provider: str
     embedding_model: Optional[str] = None
     llm_model: Optional[str] = None
+    system_prompt: Optional[str] = None
+    chunk_size: Optional[int] = 1000
+    chunk_overlap: Optional[int] = 200
     updated_at: str
 
 

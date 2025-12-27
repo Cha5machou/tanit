@@ -308,27 +308,3 @@ async def get_conversation_stats(
         )
 
 
-@router.get("/langsmith/dashboard")
-async def get_langsmith_dashboard(
-    current_admin: Dict[str, Any] = Depends(get_admin_user)
-):
-    """
-    Get LangSmith dashboard URL and basic stats (Admin only)
-    """
-    from app.core.config import settings
-    
-    if not settings.LANGSMITH_API_KEY:
-        return {
-            "enabled": False,
-            "message": "LangSmith is not configured",
-            "dashboard_url": None,
-        }
-    
-    dashboard_url = f"https://smith.langchain.com/projects/{settings.LANGSMITH_PROJECT}" if settings.LANGSMITH_PROJECT else "https://smith.langchain.com"
-    
-    return {
-        "enabled": True,
-        "dashboard_url": dashboard_url,
-        "project": settings.LANGSMITH_PROJECT,
-        "iframe_url": f"https://smith.langchain.com/o/{settings.LANGSMITH_PROJECT}/projects/{settings.LANGSMITH_PROJECT}" if settings.LANGSMITH_PROJECT else None,
-    }

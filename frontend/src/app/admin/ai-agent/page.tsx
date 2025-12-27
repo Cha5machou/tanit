@@ -18,6 +18,9 @@ export default function AIAgentPage() {
     llm_provider: 'openai',
     embedding_model: '',
     llm_model: '',
+    system_prompt: '',
+    chunk_size: 1000,
+    chunk_overlap: 200,
   })
 
   useEffect(() => {
@@ -170,10 +173,15 @@ export default function AIAgentPage() {
                     {files.map((file) => (
                       <li key={file.filename} className="flex items-center justify-between p-3 bg-gray-50 rounded">
                         <div className="flex-1">
-                          <span className="font-medium">{file.filename}</span>
+                          <span className="font-medium">{file.original_filename || file.filename}</span>
                           <span className="text-sm text-gray-500 ml-2">
                             ({(file.size / 1024).toFixed(2)} KB)
                           </span>
+                          {file.original_filename && file.original_filename !== file.filename && (
+                            <span className="text-xs text-gray-400 ml-2">
+                              ({file.filename})
+                            </span>
+                          )}
                         </div>
                         <div className="flex gap-2">
                           <Button
@@ -256,7 +264,7 @@ export default function AIAgentPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.embedding_model}
+                    value={config.embedding_model || ''}
                     onChange={(e) => setConfig({ ...config, embedding_model: e.target.value })}
                     placeholder="Laisser vide pour utiliser le modèle par défaut"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
@@ -269,11 +277,65 @@ export default function AIAgentPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.llm_model}
+                    value={config.llm_model || ''}
                     onChange={(e) => setConfig({ ...config, llm_model: e.target.value })}
                     placeholder="Laisser vide pour utiliser le modèle par défaut"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Prompt système
+                  </label>
+                  <textarea
+                    value={config.system_prompt || ''}
+                    onChange={(e) => setConfig({ ...config, system_prompt: e.target.value })}
+                    placeholder="Définissez le comportement et le rôle de l'agent IA. Ce prompt sera utilisé pour toutes les conversations."
+                    rows={8}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Ce prompt définit le comportement de l'agent IA. Il sera utilisé comme prompt système pour toutes les conversations.
+                    <br />
+                    💡 Voir <code className="text-xs bg-gray-100 px-1 rounded">docs/SYSTEM_PROMPT_EXAMPLE.md</code> pour un exemple complet.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Taille des chunks (chunk_size)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.chunk_size || 1000}
+                    onChange={(e) => setConfig({ ...config, chunk_size: parseInt(e.target.value) || 1000 })}
+                    min="100"
+                    max="10000"
+                    step="100"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Taille maximale des chunks de texte lors du découpage des documents (100-10000).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Chevauchement des chunks (chunk_overlap)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.chunk_overlap || 200}
+                    onChange={(e) => setConfig({ ...config, chunk_overlap: parseInt(e.target.value) || 200 })}
+                    min="0"
+                    max="1000"
+                    step="50"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Nombre de caractères qui se chevauchent entre les chunks consécutifs (0-1000).
+                  </p>
                 </div>
 
                 <Button onClick={handleConfigSave} className="w-full">

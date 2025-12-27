@@ -12,6 +12,14 @@ interface Message {
   timestamp: string
 }
 
+interface Conversation {
+  conversation_id: string
+  title: string
+  created_at: string
+  updated_at: string
+  message_count: number
+}
+
 export default function AIChatPage() {
   const router = useRouter()
   const [question, setQuestion] = useState('')
@@ -20,9 +28,10 @@ export default function AIChatPage() {
   const [loading, setLoading] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [streamContent, setStreamContent] = useState('')
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [loadingConversations, setLoadingConversations] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const [conversations, setConversations] = useState<any[]>([])
-  const [showConversations, setShowConversations] = useState(false)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     loadConversations()
@@ -32,254 +41,334 @@ export default function AIChatPage() {
     scrollToBottom()
   }, [messages, streamContent])
 
+  useEffect(() => {
+    // Focus input when conversation changes
+    inputRef.current?.focus()
+  }, [conversationId])
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const loadConversations = async () => {
     try {
+      setLoadingConversations(true)
       const convs = await api.listConversations()
-      setConversations(convs)
+      setConversations(convs.sort((a, b) => 
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      ))
     } catch (error) {
       console.error('Error loading conversations:', error)
+    } finally {
+      setLoadingConversations(false)
     }
   }
 
   const loadConversation = async (convId: string) => {
     try {
+      setLoading(true)
       const conv = await api.getConversation(convId)
       setConversationId(convId)
-      setMessages(conv.messages)
-      setShowConversations(false)
+      
+      // Convert Firestore messages to Message format
+      const formattedMessages: Message[] = conv.messages.map((msg: any) => ({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp || new Date().toISOString(),
+      }))
+      
+      setMessages(formattedMessages)
     } catch (error) {
       console.error('Error loading conversation:', error)
+      alert('Erreur lors du chargement de la conversation')
+    } finally {
+      setLoading(false)
     }
   }
 
   const startNewConversation = () => {
     setConversationId(null)
     setMessages([])
-    setShowConversations(false)
+    setQuestion('')
+    inputRef.current?.focus()
   }
 
-  const handleQuery = async (useStream: boolean = false) => {
-    if (!question.trim()) return
+  const handleQuery = async () => {
+    if (!question.trim() || loading || streaming) return
 
     const userMessage: Message = {
       role: 'user',
-      content: question,
+      content: question.trim(),
       timestamp: new Date().toISOString(),
     }
 
+    const currentQuestion = question.trim()
     setMessages((prev) => [...prev, userMessage])
     setQuestion('')
-    setLoading(!useStream)
-    setStreaming(useStream)
+    setStreaming(true)
     setStreamContent('')
 
     try {
-      if (useStream) {
-        // Streaming query
-        const { API_V1_URL } = await import('@/lib/constants')
-        const response = await fetch(`${API_V1_URL}/ai/query/stream`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${await (await import('@/services/auth')).getIdToken()}`,
-          },
-          body: JSON.stringify({
-            question: userMessage.content,
-            conversation_id: conversationId,
-          }),
-        })
+      const token = await getIdToken()
+      
+      const response = await fetch(`${API_V1_URL}/ai/query/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          question: currentQuestion,
+          conversation_id: conversationId,
+        }),
+      })
 
-        if (!response.ok) throw new Error('Streaming failed')
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Erreur lors de la requête')
+      }
 
-        const reader = response.body?.getReader()
-        const decoder = new TextDecoder()
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
 
-        let currentConvId = conversationId
+      let currentConvId = conversationId
+      let fullAnswer = ''
 
-        while (true) {
-          const { done, value } = await reader!.read()
-          if (done) break
+      while (true) {
+        const { done, value } = await reader!.read()
+        if (done) break
 
-          const chunk = decoder.decode(value)
-          const lines = chunk.split('\n')
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6))
-                if (data.conversation_id) {
-                  currentConvId = data.conversation_id
-                  setConversationId(currentConvId)
-                }
-                if (data.chunk) {
-                  setStreamContent((prev) => prev + data.chunk)
-                }
-                if (data.done) {
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      role: 'assistant',
-                      content: streamContent + (data.chunk || ''),
-                      timestamp: new Date().toISOString(),
-                    },
-                  ])
-                  setStreamContent('')
-                  setStreaming(false)
-                }
-              } catch (e) {
-                // Ignore parse errors
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              
+              if (data.error) {
+                throw new Error(data.error)
               }
+              
+              if (data.conversation_id && !currentConvId) {
+                currentConvId = data.conversation_id
+                setConversationId(currentConvId)
+              }
+              
+              if (data.chunk) {
+                fullAnswer += data.chunk
+                setStreamContent(fullAnswer)
+              }
+              
+              if (data.done) {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: 'assistant',
+                    content: fullAnswer,
+                    timestamp: new Date().toISOString(),
+                  },
+                ])
+                setStreamContent('')
+                setStreaming(false)
+                
+                // Reload conversations to update the list
+                await loadConversations()
+              }
+            } catch (e) {
+              console.error('Error parsing stream data:', e)
             }
           }
         }
-      } else {
-        // Regular query
-        const response = await api.queryAgent(userMessage.content, conversationId || undefined)
-        setConversationId(response.conversation_id)
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content: response.answer,
-            timestamp: new Date().toISOString(),
-          },
-        ])
       }
     } catch (error: any) {
-      alert(`Erreur: ${error.message}`)
-    } finally {
-      setLoading(false)
+      console.error('Error:', error)
+      alert(`Erreur: ${error.message || 'Une erreur est survenue'}`)
       setStreaming(false)
-      await loadConversations()
+      setStreamContent('')
+      // Remove the user message if there was an error
+      setMessages((prev) => prev.slice(0, -1))
     }
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    
+    if (days === 0) return "Aujourd'hui"
+    if (days === 1) return "Hier"
+    if (days < 7) return `Il y a ${days} jours`
+    
+    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
   }
 
   return (
     <AuthGuard requireAuth={true} requireProfile={true}>
-      <div className="min-h-screen bg-gray-100 flex flex-col">
-        <header className="bg-white shadow">
-          <div className="mx-auto max-w-7xl px-4 py-4">
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold text-gray-900">Assistant IA</h1>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setShowConversations(!showConversations)}>
-                  Historique
-                </Button>
-                <Button variant="outline" onClick={startNewConversation}>
-                  Nouvelle conversation
-                </Button>
-                <Button variant="outline" onClick={() => router.push('/')}>
-                  Retour
-                </Button>
-              </div>
+      <div className="min-h-screen bg-gray-50 flex">
+        {/* Sidebar - Always visible */}
+        <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+          {/* Sidebar Header */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Conversations</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={startNewConversation}
+                className="text-xs"
+              >
+                + Nouvelle
+              </Button>
             </div>
           </div>
-        </header>
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Conversations Sidebar */}
-          {showConversations && (
-            <div className="w-64 bg-white border-r shadow-sm p-4 overflow-y-auto">
-              <h2 className="font-semibold mb-4">Conversations</h2>
-              <Button variant="outline" size="sm" className="w-full mb-4" onClick={startNewConversation}>
-                Nouvelle conversation
-              </Button>
-              <div className="space-y-2">
+          {/* Conversations List */}
+          <div className="flex-1 overflow-y-auto">
+            {loadingConversations ? (
+              <div className="p-4 text-center text-gray-500 text-sm">
+                Chargement...
+              </div>
+            ) : conversations.length === 0 ? (
+              <div className="p-4 text-center text-gray-500 text-sm">
+                Aucune conversation
+                <br />
+                <span className="text-xs">Commencez une nouvelle conversation</span>
+              </div>
+            ) : (
+              <div className="p-2">
                 {conversations.map((conv) => (
                   <div
                     key={conv.conversation_id}
-                    className={`p-3 rounded cursor-pointer hover:bg-gray-50 ${
-                      conversationId === conv.conversation_id ? 'bg-blue-50 border border-blue-200' : ''
+                    className={`p-3 rounded-lg cursor-pointer mb-1 transition-colors ${
+                      conversationId === conv.conversation_id
+                        ? 'bg-blue-50 border border-blue-200'
+                        : 'hover:bg-gray-50'
                     }`}
                     onClick={() => loadConversation(conv.conversation_id)}
                   >
-                    <div className="font-medium text-sm">{conv.title}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {conv.message_count} messages
+                    <div className="font-medium text-sm text-gray-900 truncate">
+                      {conv.title || 'Sans titre'}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 flex items-center justify-between">
+                      <span>{conv.message_count} message{conv.message_count > 1 ? 's' : ''}</span>
+                      <span>{formatDate(conv.updated_at)}</span>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Chat Area */}
-          <div className="flex-1 flex flex-col">
-            <div className="flex-1 overflow-y-auto p-6">
-              {messages.length === 0 && !streaming && (
-                <div className="text-center text-gray-500 mt-20">
-                  <p className="text-lg mb-2">Bienvenue dans l'assistant IA</p>
-                  <p>Posez une question pour commencer</p>
+          {/* Sidebar Footer */}
+          <div className="p-4 border-t border-gray-200">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => router.push('/')}
+            >
+              ← Retour
+            </Button>
+          </div>
+        </div>
+
+        {/* Main Chat Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Chat Header */}
+          <header className="bg-white border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Assistant IA</h1>
+                {conversationId && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    {conversations.find(c => c.conversation_id === conversationId)?.title || 'Conversation'}
+                  </p>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {messages.length === 0 && !streaming && (
+              <div className="text-center text-gray-500 mt-20 max-w-md mx-auto">
+                <div className="text-4xl mb-4">💬</div>
+                <p className="text-lg font-medium mb-2">Bienvenue dans l'assistant IA</p>
+                <p className="text-sm">Posez une question pour commencer une conversation</p>
+              </div>
+            )}
+
+            <div className="space-y-4 max-w-3xl mx-auto">
+              {messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                      msg.role === 'user'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-900 shadow-sm border border-gray-200'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                    <p className={`text-xs mt-1 ${
+                      msg.role === 'user' ? 'text-blue-100' : 'text-gray-400'
+                    }`}>
+                      {new Date(msg.timestamp).toLocaleTimeString('fr-FR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {streaming && streamContent && (
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-white text-gray-900 shadow-sm border border-gray-200">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{streamContent}</p>
+                    <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" />
+                  </div>
                 </div>
               )}
 
-              <div className="space-y-4 max-w-3xl mx-auto">
-                {messages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg p-4 ${
-                        msg.role === 'user'
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-white text-gray-900 shadow'
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    </div>
-                  </div>
-                ))}
-
-                {streaming && streamContent && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] rounded-lg p-4 bg-white text-gray-900 shadow">
-                      <p>{streamContent}</p>
-                      <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-1" />
-                    </div>
-                  </div>
-                )}
-
-                {loading && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] rounded-lg p-4 bg-white text-gray-900 shadow">
-                      <p>Réflexion en cours...</p>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
+              <div ref={messagesEndRef} />
             </div>
+          </div>
 
-            {/* Input Area */}
-            <div className="bg-white border-t p-4">
-              <div className="max-w-3xl mx-auto flex gap-2">
-                <input
-                  type="text"
+          {/* Input Area */}
+          <div className="bg-white border-t border-gray-200 p-4">
+            <div className="max-w-3xl mx-auto">
+              <div className="flex gap-2 items-end">
+                <textarea
+                  ref={inputRef}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  onKeyPress={(e) => {
+                  onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      handleQuery(false)
+                      handleQuery()
                     }
                   }}
                   placeholder="Posez votre question..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={1}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   disabled={loading || streaming}
+                  style={{ minHeight: '44px', maxHeight: '120px' }}
                 />
-                <Button onClick={() => handleQuery(false)} disabled={loading || streaming}>
-                  Envoyer
-                </Button>
-                <Button variant="outline" onClick={() => handleQuery(true)} disabled={loading || streaming}>
-                  Stream
+                <Button
+                  onClick={handleQuery}
+                  disabled={loading || streaming || !question.trim()}
+                  className="px-6"
+                >
+                  {streaming ? '...' : 'Envoyer'}
                 </Button>
               </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Appuyez sur Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne
+              </p>
             </div>
           </div>
         </div>
@@ -287,4 +376,3 @@ export default function AIChatPage() {
     </AuthGuard>
   )
 }
-

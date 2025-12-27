@@ -138,7 +138,7 @@ export const api = {
     return response.json()
   },
 
-  async setAgentConfig(config: { embedding_provider: string; llm_provider: string; embedding_model?: string; llm_model?: string }): Promise<any> {
+  async setAgentConfig(config: { embedding_provider: string; llm_provider: string; embedding_model?: string; llm_model?: string; system_prompt?: string; chunk_size?: number; chunk_overlap?: number }): Promise<any> {
     const response = await fetchWithAuth(`${API_V1_URL}/ai/config`, {
       method: 'POST',
       body: JSON.stringify(config),
@@ -183,11 +183,6 @@ export const api = {
 
   async getSessionStats(): Promise<any> {
     const response = await fetchWithAuth(`${API_V1_URL}/monitoring/stats/sessions`)
-    return response.json()
-  },
-
-  async getLangSmithDashboard(): Promise<any> {
-    const response = await fetchWithAuth(`${API_V1_URL}/monitoring/langsmith/dashboard`)
     return response.json()
   },
 

@@ -22,6 +22,7 @@ import json
 import uuid
 from datetime import datetime
 import time
+from app.core.logging import logger
 
 router = APIRouter()
 
@@ -53,9 +54,12 @@ async def upload_file(
         )
         return FileUploadResponse(**result)
     except Exception as e:
+        import traceback
+        error_detail = f"Failed to upload file: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_detail)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error uploading file: {str(e)}"
+            detail=f"Failed to upload file: {str(e)}"
         )
 
 
@@ -70,6 +74,9 @@ async def list_files(
         files = StorageService.list_files()
         return [FileInfo(**f) for f in files]
     except Exception as e:
+        import traceback
+        error_detail = f"Error listing files: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_detail)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error listing files: {str(e)}"
@@ -95,6 +102,9 @@ async def get_file(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_detail = f"Error getting file: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_detail)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting file: {str(e)}"
@@ -180,6 +190,9 @@ async def set_agent_config(
         "llm_provider": config.llm_provider,
         "embedding_model": config.embedding_model,
         "llm_model": config.llm_model,
+        "system_prompt": config.system_prompt,
+        "chunk_size": config.chunk_size,
+        "chunk_overlap": config.chunk_overlap,
     }
     FirestoreService.save_agent_config(config_data)
     
@@ -188,6 +201,9 @@ async def set_agent_config(
         llm_provider=config.llm_provider,
         embedding_model=config.embedding_model,
         llm_model=config.llm_model,
+        system_prompt=config.system_prompt,
+        chunk_size=config.chunk_size,
+        chunk_overlap=config.chunk_overlap,
         updated_at=datetime.utcnow().isoformat()
     )
 
@@ -206,6 +222,9 @@ async def get_agent_config(
             llm_provider=config.get("llm_provider", "openai"),
             embedding_model=config.get("embedding_model"),
             llm_model=config.get("llm_model"),
+            system_prompt=config.get("system_prompt"),
+            chunk_size=config.get("chunk_size", 1000),
+            chunk_overlap=config.get("chunk_overlap", 200),
             updated_at=config.get("updated_at", datetime.utcnow()).isoformat() if isinstance(config.get("updated_at"), datetime) else datetime.utcnow().isoformat()
         )
     
@@ -215,6 +234,9 @@ async def get_agent_config(
         llm_provider="openai",
         embedding_model=None,
         llm_model=None,
+        system_prompt=None,
+        chunk_size=1000,
+        chunk_overlap=200,
         updated_at=datetime.utcnow().isoformat()
     )
 
@@ -237,6 +259,9 @@ async def query_agent(
     embedding_model = config.get("embedding_model") if config else None
     llm_provider = config.get("llm_provider", "openai") if config else "openai"
     llm_model = config.get("llm_model") if config else None
+    system_prompt = config.get("system_prompt") if config else None
+    chunk_size = config.get("chunk_size", 1000) if config else 1000
+    chunk_overlap = config.get("chunk_overlap", 200) if config else 200
     
     # Create conversation if needed
     if not conversation_id:
@@ -255,6 +280,9 @@ async def query_agent(
             embedding_model=embedding_model,
             llm_provider=llm_provider,
             llm_model=llm_model,
+            system_prompt=system_prompt,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
             user_id=user_id
         )
         
@@ -293,6 +321,9 @@ async def query_agent_stream(
     embedding_model = config.get("embedding_model") if config else None
     llm_provider = config.get("llm_provider", "openai") if config else "openai"
     llm_model = config.get("llm_model") if config else None
+    system_prompt = config.get("system_prompt") if config else None
+    chunk_size = config.get("chunk_size", 1000) if config else 1000
+    chunk_overlap = config.get("chunk_overlap", 200) if config else 200
     
     # Create conversation if needed
     if not conversation_id:
@@ -311,6 +342,9 @@ async def query_agent_stream(
                 embedding_model=embedding_model,
                 llm_provider=llm_provider,
                 llm_model=llm_model,
+                system_prompt=system_prompt,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
                 user_id=user_id
             ):
                 full_answer += chunk

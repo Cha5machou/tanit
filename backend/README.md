@@ -83,9 +83,6 @@ OPENAI_API_KEY=sk-...
 # Google Gemini (pour l'agent IA)
 GOOGLE_API_KEY=...
 
-# LangSmith (monitoring)
-LANGSMITH_API_KEY=...
-LANGSMITH_PROJECT=your-project-name
 ```
 
 Voir la documentation complète dans `docs/AI_AGENT_CONFIG.md` pour plus de détails sur la configuration de l'agent IA.

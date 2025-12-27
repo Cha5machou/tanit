@@ -24,7 +24,6 @@ export default function MonitoringPage() {
   const [connectionStats, setConnectionStats] = useState<any>(null)
   const [sessionStats, setSessionStats] = useState<any>(null)
   const [conversationStats, setConversationStats] = useState<any>(null)
-  const [langsmith, setLangsmith] = useState<any>(null)
   const [period, setPeriod] = useState<'hour' | 'day' | 'week'>('day')
   const [loading, setLoading] = useState(true)
 
@@ -35,18 +34,16 @@ export default function MonitoringPage() {
   const loadStats = async () => {
     setLoading(true)
     try {
-      const [users, connections, sessions, conversations, langsmithData] = await Promise.all([
+      const [users, connections, sessions, conversations] = await Promise.all([
         api.getUserStats(),
         api.getConnectionStats(period),
         api.getSessionStats(),
         api.getConversationStats(),
-        api.getLangSmithDashboard(),
       ])
       setUserStats(users)
       setConnectionStats(connections)
       setSessionStats(sessions)
       setConversationStats(conversations)
-      setLangsmith(langsmithData)
     } catch (error) {
       console.error('Error loading stats:', error)
     } finally {
@@ -82,40 +79,6 @@ export default function MonitoringPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* LangSmith Dashboard */}
-              {langsmith?.enabled && (
-                <div className="rounded-lg bg-white p-6 shadow">
-                  <h2 className="text-lg font-semibold mb-4">LangSmith Dashboard</h2>
-                  <p className="text-gray-600 mb-4">
-                    Monitorer les tokens, la latence et les coûts de l'agent IA.
-                  </p>
-                  <div className="flex gap-4">
-                    <a
-                      href={langsmith.dashboard_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block"
-                    >
-                      <Button>Ouvrir LangSmith Dashboard</Button>
-                    </a>
-                    {langsmith.project && (
-                      <div className="text-sm text-gray-600 flex items-center">
-                        Projet: <strong className="ml-2">{langsmith.project}</strong>
-                      </div>
-                    )}
-                  </div>
-                  {langsmith.iframe_url && (
-                    <div className="mt-4 border rounded-lg overflow-hidden" style={{ height: '600px' }}>
-                      <iframe
-                        src={langsmith.iframe_url}
-                        className="w-full h-full"
-                        title="LangSmith Dashboard"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* User Stats */}
               <div className="rounded-lg bg-white p-6 shadow">
                 <h2 className="text-lg font-semibold mb-4">Statistiques des utilisateurs</h2>

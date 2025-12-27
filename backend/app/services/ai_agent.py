@@ -5,24 +5,16 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGener
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
-from langsmith import Client
+from langchain_core.messages import HumanMessage, AIMessage
 from typing import Optional, Dict, Any, List, AsyncIterator
 import os
 from app.core.config import settings
 from app.core.logging import logger
 from app.services.storage import StorageService
+from app.services.firestore import FirestoreService
 import uuid
 from datetime import datetime
 from google.cloud import firestore
-
-# Initialize LangSmith
-langsmith_client = None
-if settings.LANGSMITH_API_KEY:
-    langsmith_client = Client(api_key=settings.LANGSMITH_API_KEY)
-    os.environ["LANGCHAIN_TRACING_V2"] = "true"
-    os.environ["LANGCHAIN_API_KEY"] = settings.LANGSMITH_API_KEY
-    if settings.LANGSMITH_PROJECT:
-        os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
 
 
 class AIAgentService:
@@ -135,14 +127,37 @@ class AIAgentService:
         return vector_store
     
     @staticmethod
-    def _get_memory(conversation_id: str) -> ConversationBufferMemory:
-        """Get or create memory for a conversation"""
+    def _get_memory(conversation_id: str, user_id: Optional[str] = None) -> ConversationBufferMemory:
+        """Get or create memory for a conversation, loading history from Firestore if available"""
         if conversation_id not in AIAgentService._memories:
-            AIAgentService._memories[conversation_id] = ConversationBufferMemory(
+            memory = ConversationBufferMemory(
                 memory_key="chat_history",
                 return_messages=True,
                 output_key="answer"
             )
+            
+            # Load conversation history from Firestore if available
+            if user_id:
+                try:
+                    conv_data = FirestoreService.get_conversation(conversation_id, user_id)
+                    if conv_data and conv_data.get("messages"):
+                        # Load messages into memory (skip the last user message if it's the current question)
+                        messages = conv_data.get("messages", [])
+                        # Load all messages except the last one if it's a user message (current question)
+                        # This ensures the current question isn't duplicated in memory
+                        for msg in messages[:-1]:  # Exclude last message as it's the current question
+                            content = msg.get("content", "")
+                            if content:  # Only add non-empty messages
+                                if msg.get("role") == "user":
+                                    memory.chat_memory.add_user_message(HumanMessage(content=content))
+                                elif msg.get("role") == "assistant":
+                                    memory.chat_memory.add_ai_message(AIMessage(content=content))
+                        logger.info(f"Loaded {len(messages) - 1} messages from Firestore for conversation {conversation_id}")
+                except Exception as e:
+                    logger.warning(f"Could not load conversation history from Firestore: {e}")
+            
+            AIAgentService._memories[conversation_id] = memory
+        
         return AIAgentService._memories[conversation_id]
     
     @staticmethod
@@ -151,10 +166,14 @@ class AIAgentService:
         embedding_provider: str = "openai",
         embedding_model: Optional[str] = None,
         llm_provider: str = "openai",
-        llm_model: Optional[str] = None
+        llm_model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
+        user_id: Optional[str] = None
     ):
         """Get or create chain for a conversation"""
-        cache_key = f"{conversation_id}_{embedding_provider}_{embedding_model or 'default'}_{llm_provider}_{llm_model or 'default'}"
+        cache_key = f"{conversation_id}_{embedding_provider}_{embedding_model or 'default'}_{llm_provider}_{llm_model or 'default'}_{system_prompt or 'default'}_{chunk_size}_{chunk_overlap}"
         
         if cache_key in AIAgentService._chains:
             return AIAgentService._chains[cache_key]
@@ -163,17 +182,28 @@ class AIAgentService:
         vector_store = AIAgentService._create_vector_store(
             embedding_provider, 
             embedding_model,
-            conversation_id
+            conversation_id,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
         )
         
-        # Get memory
-        memory = AIAgentService._get_memory(conversation_id)
+        # Get memory (will load history from Firestore if available)
+        memory = AIAgentService._get_memory(conversation_id, user_id)
         
         # Get LLM
         llm = AIAgentService._get_llm(llm_provider, llm_model)
         
-        # Create prompt template
-        template = """You are a helpful AI assistant that answers questions based on the provided context.
+        # Create prompt template with system prompt if provided
+        if system_prompt:
+            template = f"""{system_prompt}
+
+Context: {{context}}
+
+Question: {{question}}
+
+Answer:"""
+        else:
+            template = """You are a helpful AI assistant that answers questions based on the provided context.
         
 Context: {context}
 
@@ -206,6 +236,9 @@ Answer:"""
         embedding_model: Optional[str] = None,
         llm_provider: str = "openai",
         llm_model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
         user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Query the AI agent"""
@@ -218,7 +251,11 @@ Answer:"""
                 embedding_provider,
                 embedding_model,
                 llm_provider,
-                llm_model
+                llm_model,
+                system_prompt,
+                chunk_size,
+                chunk_overlap,
+                user_id
             )
             
             # Run chain
@@ -249,6 +286,9 @@ Answer:"""
         embedding_model: Optional[str] = None,
         llm_provider: str = "openai",
         llm_model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
         user_id: Optional[str] = None
     ) -> AsyncIterator[str]:
         """Query the AI agent with streaming"""
@@ -261,7 +301,11 @@ Answer:"""
                 embedding_provider,
                 embedding_model,
                 llm_provider,
-                llm_model
+                llm_model,
+                system_prompt,
+                chunk_size,
+                chunk_overlap,
+                user_id
             )
             
             # Run chain with streaming
