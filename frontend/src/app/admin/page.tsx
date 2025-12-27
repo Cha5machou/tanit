@@ -10,7 +10,7 @@ export default function AdminPage() {
   const router = useRouter()
 
   return (
-    <RoleGuard requiredRole={['admin', 'super-admin']}>
+    <RoleGuard requiredRole="admin">
       <div className="min-h-screen bg-gray-100">
         <header className="bg-white shadow">
           <div className="mx-auto max-w-7xl px-4 py-6">
@@ -37,24 +37,29 @@ export default function AdminPage() {
         
         <main className="mx-auto max-w-7xl px-4 py-8">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/sites')}>
-              <h2 className="text-lg font-semibold">Configuration du site</h2>
-              <p className="mt-2 text-gray-600">Gérer les paramètres généraux</p>
+            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/users')}>
+              <h2 className="text-lg font-semibold">Gestion des utilisateurs</h2>
+              <p className="mt-2 text-gray-600">Gérer les rôles des utilisateurs (user/admin)</p>
             </div>
             
-            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/ai-config')}>
-              <h2 className="text-lg font-semibold">Assistant IA</h2>
-              <p className="mt-2 text-gray-600">Configurer le prompt et les documents</p>
+            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/ai-agent')}>
+              <h2 className="text-lg font-semibold">Agent IA</h2>
+              <p className="mt-2 text-gray-600">Gérer les documents et la configuration de l'agent IA</p>
             </div>
             
             <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/poi')}>
               <h2 className="text-lg font-semibold">Points d'intérêt</h2>
-              <p className="mt-2 text-gray-600">Gérer les POI et parcours</p>
+              <p className="mt-2 text-gray-600">Gérer les attractions et leurs coordonnées</p>
             </div>
             
-            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/stats')}>
-              <h2 className="text-lg font-semibold">Statistiques</h2>
-              <p className="mt-2 text-gray-600">Voir les analytics et l'usage</p>
+            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/quiz')}>
+              <h2 className="text-lg font-semibold">Quiz</h2>
+              <p className="mt-2 text-gray-600">Gérer les questions et réponses des quiz</p>
+            </div>
+            
+            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/monitoring')}>
+              <h2 className="text-lg font-semibold">Monitoring & Analytics</h2>
+              <p className="mt-2 text-gray-600">Statistiques d'utilisation et analytics détaillés</p>
             </div>
           </div>
         </main>

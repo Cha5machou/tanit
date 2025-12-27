@@ -77,12 +77,6 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
-    
-    // Sites collection (pour plus tard)
-    match /sites/{siteId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
-    }
   }
 }
 ```
@@ -128,7 +122,7 @@ Si vous préférez utiliser des variables d'environnement, vous devrez extraire 
 2. Faites défiler jusqu'à **"Vos applications"** ou **"Your apps"**
 3. Cliquez sur l'icône **`</>`** (Web) pour ajouter une application web
 4. Entrez un nom d'app (ex: `City Platform Web`)
-5. **Ne cochez PAS** "Also set up Firebase Hosting" (on utilise Netlify)
+5. **Ne cochez PAS** "Also set up Firebase Hosting" (on utilise Cloud Run)
 6. Cliquez sur **"Enregistrer l'application"** ou **"Register app"**
 7. Vous verrez la configuration Firebase avec vos clés API
 
@@ -239,7 +233,7 @@ npm run dev
    ```
 
 3. **Pour la production** :
-   - Utilisez des secrets dans votre plateforme de déploiement (Netlify, Cloud Run)
+   - Utilisez des secrets dans votre plateforme de déploiement (Cloud Run)
    - Configurez des règles Firestore strictes
    - Limitez les domaines autorisés pour CORS
 

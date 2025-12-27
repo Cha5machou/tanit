@@ -46,8 +46,8 @@ coverage.xml
 .firebase/
 firebase-debug.log
 
-# Netlify
-.netlify/
+# Docker
+docker-compose.override.yml
 
 # Google Cloud
 .gcloudignore

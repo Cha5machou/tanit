@@ -22,6 +22,19 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = "development"
     
+    # Google Cloud Storage
+    GCS_BUCKET_NAME: str = ""
+    
+    # OpenAI
+    OPENAI_API_KEY: str = ""
+    
+    # Google Gemini
+    GOOGLE_API_KEY: str = ""
+    
+    # LangSmith
+    LANGSMITH_API_KEY: str = ""
+    LANGSMITH_PROJECT: str = ""
+    
     @field_validator("cors_origins_raw", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: Union[str, List[str]]) -> str:

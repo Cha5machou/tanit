@@ -4,7 +4,7 @@ const nextConfig = {
   images: {
     domains: ['storage.googleapis.com', 'firebasestorage.googleapis.com'],
   },
-  // Pour optimiser le build Netlify
+  // Standalone output for Cloud Run deployment
   output: 'standalone',
 }
 

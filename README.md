@@ -2,9 +2,9 @@
 
 > Plateforme SaaS pour créer des applications web culturelles interactives
 
-## 🎯 Vision
+## 🎯 Objectif
 
-Permettre à des organisations (offices du tourisme, musées, collectivités, événements) de créer facilement des **applications web culturelles** intégrant :
+City Platform est une plateforme SaaS permettant aux organisations (offices du tourisme, musées, collectivités, événements) de créer facilement des **applications web culturelles** intégrant :
 
 - 🗺️ Parcours urbains interactifs
 - 🤖 Assistant IA configurable
@@ -17,85 +17,100 @@ Permettre à des organisations (offices du tourisme, musées, collectivités, é
 
 ```
 city-platform/
-├── frontend/          # Next.js (Netlify)
-├── backend/           # FastAPI (Cloud Run)
+├── frontend/          # Application Next.js
+│   ├── src/          # Code source
+│   ├── Dockerfile    # Image Docker pour Cloud Run
+│   └── README.md     # Documentation frontend
+│
+├── backend/           # API FastAPI
+│   ├── app/          # Code source
+│   ├── Dockerfile    # Image Docker pour Cloud Run
+│   └── README.md     # Documentation backend
+│
 ├── infra/             # Configuration infrastructure
-└── docs/              # Documentation projet
+│   ├── cloudbuild-*.yaml    # Configurations Cloud Build
+│   └── cloudrun/            # Configurations Cloud Run
+│
+├── scripts/           # Scripts utilitaires
+│   └── start-docker.sh     # Script de démarrage Docker
+│
+├── docs/              # Documentation
+│   └── QUICKSTART.md       # Guide de démarrage rapide
+│
+├── docker-compose.yml       # Docker Compose (production)
+└── docker-compose.dev.yml   # Docker Compose (développement)
 ```
 
 ## 🏗️ Architecture technique
 
 | Composant | Technologie | Hébergement |
 |-----------|-------------|-------------|
-| Frontend | Next.js + Tailwind | Netlify |
+| Frontend | Next.js + Tailwind | Google Cloud Run |
 | Backend | FastAPI | Google Cloud Run |
 | Auth | Firebase Authentication | Google Cloud |
 | Database | Firestore | Google Cloud |
 | Storage | Google Cloud Storage | Google Cloud |
 | IA | Gemini Flash / OpenAI | API externes |
 
-## 🚀 Démarrage rapide
+## 🚀 Déploiement avec Docker
 
 ### Prérequis
 
-- Node.js 18+
-- Python 3.11+
-- Compte Google Cloud
-- Compte Firebase
-- Compte Netlify
+- Docker Desktop (ou Docker Engine + Docker Compose)
+- Compte Google Cloud (pour le déploiement en production)
+- Compte Firebase (pour l'authentification)
 
-### Frontend
+### Démarrage local
 
+1. **Configurer les fichiers d'environnement** :
 ```bash
-cd frontend
-npm install
-npm run dev
+# Backend
+cp backend/.env.example backend/.env
+# Éditer backend/.env avec vos credentials Firebase
+
+# Frontend
+cp frontend/env.example frontend/.env.local
+# Éditer frontend/.env.local avec vos credentials Firebase
+# IMPORTANT: NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-### Backend
+2. **Démarrer avec Docker Compose** :
 
+**Mode développement (avec hot reload)** :
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # ou venv\Scripts\activate sur Windows
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
-## 📊 Phases de développement
+**Mode production** :
+```bash
+docker-compose up --build
+```
 
-### Phase 1 — Socle
-- [ ] Auth Firebase
-- [ ] Next.js + Netlify
-- [ ] FastAPI + Cloud Run
-- [ ] Firestore
+3. **Accéder à l'application** :
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
-### Phase 2 — Fonctionnel MVP
-- [ ] Carte + POI
-- [ ] IA texte
-- [ ] Tracking
+### Déploiement sur Google Cloud Run
 
-### Phase 3 — Admin
-- [ ] CRUD site
-- [ ] Config IA
-- [ ] Stats simples
+Voir [docs/QUICKSTART.md](./docs/QUICKSTART.md) pour le guide complet de déploiement.
 
-## 👥 Personas
+**Résumé rapide** :
+```bash
+# Backend
+gcloud builds submit --config=infra/cloudbuild-backend.yaml --substitutions=_REGION=europe-west1
 
-1. **Utilisateur final** : Touriste, visiteur, habitant curieux
-2. **Admin** : Office du tourisme, musée, collectivité
-3. **Super-admin** : Équipe produit/technique
+# Frontend
+gcloud builds submit --config=infra/cloudbuild-frontend.yaml --substitutions=_REGION=europe-west1
+```
 
-## 📝 Documentation
+## 📚 Documentation
 
-- [Guide de configuration Firebase](./FIREBASE_SETUP.md) ⭐ **Commencer ici**
-- [EPIC 1 - Authentification & Accès](./EPIC1_README.md)
-- [Plan de projet complet](./PROJECT_PLAN.md)
-- [Architecture détaillée](./docs/architecture.md) (à venir)
-- [Modèle de données](./docs/data-model.md) (à venir)
-- [API Reference](./docs/api.md) (à venir)
+- [Guide de démarrage rapide](./docs/QUICKSTART.md) ⚡ **Commencer ici**
+- [Configuration Firebase](./FIREBASE_SETUP.md) 🔥
+- [Documentation Frontend](./frontend/README.md)
+- [Documentation Backend](./backend/README.md)
 
 ## 📄 Licence
 
 Propriétaire - Tous droits réservés
-

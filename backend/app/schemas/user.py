@@ -9,7 +9,6 @@ class UserResponse(BaseModel):
     name: Optional[str] = None
     picture: Optional[str] = None
     role: str = "user"
-    site_id: Optional[str] = None
     created_at: Optional[datetime] = None
     
     class Config:
@@ -21,6 +20,7 @@ class ProfileCreate(BaseModel):
     sexe: Optional[str] = None
     metier: Optional[str] = None
     raison_visite: Optional[str] = None
+    nationalite: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -29,9 +29,13 @@ class ProfileResponse(BaseModel):
     sexe: Optional[str] = None
     metier: Optional[str] = None
     raison_visite: Optional[str] = None
+    nationalite: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
     class Config:
         from_attributes = True
 
+
+class UserRoleUpdate(BaseModel):
+    role: str  # "user" or "admin"

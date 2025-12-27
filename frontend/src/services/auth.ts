@@ -1,14 +1,12 @@
 import {
   signInWithPopup,
   GoogleAuthProvider,
-  FacebookAuthProvider,
   signOut as firebaseSignOut,
   User as FirebaseUser,
 } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 
 const googleProvider = new GoogleAuthProvider()
-const facebookProvider = new FacebookAuthProvider()
 
 export const signInWithGoogle = async (): Promise<FirebaseUser> => {
   try {
@@ -16,16 +14,6 @@ export const signInWithGoogle = async (): Promise<FirebaseUser> => {
     return result.user
   } catch (error) {
     console.error('Error signing in with Google:', error)
-    throw error
-  }
-}
-
-export const signInWithFacebook = async (): Promise<FirebaseUser> => {
-  try {
-    const result = await signInWithPopup(auth, facebookProvider)
-    return result.user
-  } catch (error) {
-    console.error('Error signing in with Facebook:', error)
     throw error
   }
 }

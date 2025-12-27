@@ -18,7 +18,7 @@ export function RoleGuard({
   fallback,
 }: RoleGuardProps) {
   const { isAuthenticated, loading } = useAuth()
-  const { hasRole, isAdmin, isSuperAdmin } = useRole()
+  const { hasRole, isAdmin } = useRole()
   const router = useRouter()
 
   useEffect(() => {
@@ -32,14 +32,13 @@ export function RoleGuard({
     const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
     const hasAccess = roles.some((role) => {
       if (role === 'admin') return isAdmin()
-      if (role === 'super-admin') return isSuperAdmin()
       return hasRole(role)
     })
 
     if (!hasAccess) {
       router.push('/')
     }
-  }, [isAuthenticated, loading, requiredRole, hasRole, isAdmin, isSuperAdmin, router])
+  }, [isAuthenticated, loading, requiredRole, hasRole, isAdmin, router])
 
   if (loading) {
     return (
@@ -59,7 +58,6 @@ export function RoleGuard({
   const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
   const hasAccess = roles.some((role) => {
     if (role === 'admin') return isAdmin()
-    if (role === 'super-admin') return isSuperAdmin()
     return hasRole(role)
   })
 

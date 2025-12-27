@@ -1,41 +1,57 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { signInWithGoogle, signInWithFacebook } from '@/services/auth'
+import { useAuth } from '@/hooks/useAuth'
+import { useProfile } from '@/hooks/useProfile'
+import { signInWithGoogle } from '@/services/auth'
 import { Button } from '@/components/ui/Button'
 
 export default function LoginPage() {
-  const [loading, setLoading] = useState<'google' | 'facebook' | null>(null)
+  const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+  const { isAuthenticated, loading: authLoading } = useAuth()
+  const { hasProfile, loading: profileLoading } = useProfile()
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && !profileLoading && isAuthenticated) {
+      // If user has profile, go to home, otherwise to onboarding
+      router.push(hasProfile ? '/' : '/onboarding')
+    }
+  }, [authLoading, profileLoading, isAuthenticated, hasProfile, router])
 
   const handleGoogleSignIn = async () => {
     try {
-      setLoading('google')
+      setLoading(true)
       setError(null)
       await signInWithGoogle()
-      router.push('/onboarding')
+      // After login, check profile and redirect accordingly
+      // The useEffect above will handle the redirect
     } catch (err: any) {
       console.error('Google sign in error:', err)
       setError(err.message || 'Erreur lors de la connexion avec Google')
     } finally {
-      setLoading(null)
+      setLoading(false)
     }
   }
 
-  const handleFacebookSignIn = async () => {
-    try {
-      setLoading('facebook')
-      setError(null)
-      await signInWithFacebook()
-      router.push('/onboarding')
-    } catch (err: any) {
-      console.error('Facebook sign in error:', err)
-      setError(err.message || 'Erreur lors de la connexion avec Facebook')
-    } finally {
-      setLoading(null)
-    }
+  // Show loading while checking auth state
+  if (authLoading || profileLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-600 border-r-transparent"></div>
+          <p className="mt-4 text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Don't show login page if already authenticated (will redirect)
+  if (isAuthenticated) {
+    return null
   }
 
   return (
@@ -61,8 +77,8 @@ export default function LoginPage() {
             variant="outline"
             className="w-full flex items-center justify-center gap-3"
             onClick={handleGoogleSignIn}
-            isLoading={loading === 'google'}
-            disabled={loading !== null}
+            isLoading={loading}
+            disabled={loading}
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -83,19 +99,6 @@ export default function LoginPage() {
               />
             </svg>
             Continuer avec Google
-          </Button>
-          
-          <Button
-            variant="primary"
-            className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700"
-            onClick={handleFacebookSignIn}
-            isLoading={loading === 'facebook'}
-            disabled={loading !== null}
-          >
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-            </svg>
-            Continuer avec Facebook
           </Button>
         </div>
       </div>

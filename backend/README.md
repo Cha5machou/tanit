@@ -2,42 +2,101 @@
 
 API FastAPI pour la plateforme culturelle.
 
-## Installation
+## 🛠️ Stack technique
 
-1. Créer un environnement virtuel :
-```bash
-python -m venv venv
-source venv/bin/activate  # Sur Windows: venv\Scripts\activate
+- **Framework** : FastAPI
+- **Language** : Python 3.11+
+- **Auth** : Firebase Admin SDK
+- **Database** : Firestore
+- **Storage** : Google Cloud Storage
+- **Déploiement** : Google Cloud Run
+
+## 📁 Structure
+
+```
+app/
+├── main.py           # Application FastAPI principale
+├── core/
+│   ├── config.py     # Configuration (env vars)
+│   ├── security.py   # Firebase Admin + JWT verification
+│   └── logging.py    # Configuration logging
+├── api/
+│   ├── routes/       # Routes API
+│   │   └── auth.py
+│   └── deps.py       # Dépendances (auth, roles)
+├── services/
+│   └── firestore.py  # Service Firestore
+├── models/           # Modèles de données
+└── schemas/          # Schémas Pydantic pour API
 ```
 
-2. Installer les dépendances :
+## 🚀 Démarrage avec Docker
+
+### Développement local
+
+1. **Configurer les variables d'environnement** :
 ```bash
-pip install -r requirements.txt
+cp .env.example .env
+# Éditer .env avec vos credentials Firebase
 ```
 
-## Configuration
-
-1. Copier `.env.example` vers `.env`
-2. Configurer les variables d'environnement Firebase
-
-## Lancer l'API
-
+2. **Démarrer avec Docker Compose** :
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Depuis la racine du projet
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
-L'API sera accessible sur `http://localhost:8000`
+L'API sera accessible sur http://localhost:8000 avec hot reload activé.
 
-## Documentation API
+### Build de production
+
+```bash
+# Build avec Docker
+docker build -t city-platform-backend .
+
+# Ou avec Docker Compose
+docker-compose up --build
+```
+
+## 🔧 Variables d'environnement
+
+Créer un fichier `.env` avec :
+
+```env
+# Firebase Admin SDK
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_PRIVATE_KEY_ID=your-private-key-id
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
+FIREBASE_CLIENT_ID=your-client-id
+
+# API Settings
+CORS_ORIGINS=http://localhost:3000
+ENVIRONMENT=development
+```
+
+Voir `.env.example` pour la liste complète.
+
+## 📚 Documentation API
 
 Une fois l'API lancée, accéder à :
-- Swagger UI : `http://localhost:8000/docs`
-- ReDoc : `http://localhost:8000/redoc`
+- **Swagger UI** : http://localhost:8000/docs
+- **ReDoc** : http://localhost:8000/redoc
 
-## Docker
+## ✅ Health Check
 
 ```bash
-docker build -t city-platform-backend .
-docker run -p 8000:8000 --env-file .env city-platform-backend
+curl http://localhost:8000/health
+# Devrait retourner: {"status":"healthy"}
 ```
 
+## 🚀 Déploiement sur Cloud Run
+
+Voir [docs/QUICKSTART.md](../docs/QUICKSTART.md) pour le guide complet.
+
+**Résumé** :
+```bash
+gcloud builds submit \
+  --config=../infra/cloudbuild-backend.yaml \
+  --substitutions=_REGION=europe-west1
+```

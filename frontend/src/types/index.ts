@@ -1,4 +1,4 @@
-export type UserRole = 'user' | 'admin' | 'super-admin'
+export type UserRole = 'user' | 'admin'
 
 export interface User {
   uid: string
@@ -6,7 +6,6 @@ export interface User {
   name?: string
   picture?: string
   role: UserRole
-  site_id?: string
   created_at?: string
 }
 
@@ -16,6 +15,7 @@ export interface Profile {
   sexe?: string
   metier?: string
   raison_visite?: string
+  nationalite?: string
   created_at: string
   updated_at: string
 }
@@ -25,5 +25,6 @@ export interface ProfileCreate {
   sexe?: string
   metier?: string
   raison_visite?: string
+  nationalite?: string
 }
 

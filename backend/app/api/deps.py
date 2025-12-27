@@ -5,7 +5,7 @@ from typing import Dict, Any, Literal
 
 
 async def get_current_user_with_role(
-    required_role: Literal["admin", "super-admin"] = None,
+    required_role: Literal["admin"] = None,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
@@ -22,21 +22,23 @@ async def get_current_user_with_role(
     
     user_role = user_data.get("role", "user")
     
-    if required_role:
-        if required_role == "admin" and user_role not in ["admin", "super-admin"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required"
-            )
-        if required_role == "super-admin" and user_role != "super-admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Super-admin access required"
-            )
+    if required_role == "admin" and user_role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
     
     return {
         **current_user,
         "role": user_role,
-        "site_id": user_data.get("site_id"),
     }
+
+
+async def get_admin_user(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Dependency that requires admin role
+    """
+    return await get_current_user_with_role(required_role="admin", current_user=current_user)
 
