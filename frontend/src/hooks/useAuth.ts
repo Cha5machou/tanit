@@ -21,10 +21,13 @@ export function useAuth() {
         try {
           // Fetch user data from backend
           const userData = await api.getCurrentUser()
+          console.log('User data fetched:', userData)
           setUser(userData)
         } catch (err) {
           console.error('Error fetching user data:', err)
           setError(err as Error)
+          // Set user to null on error to prevent infinite loops
+          setUser(null)
         }
       } else {
         setUser(null)

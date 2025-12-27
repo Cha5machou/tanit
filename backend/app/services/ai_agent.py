@@ -34,17 +34,20 @@ class AIAgentService:
     _chains: Dict[str, Any] = {}
     
     @staticmethod
-    def _get_embeddings(provider: str = "openai"):
+    def _get_embeddings(provider: str = "openai", model: Optional[str] = None):
         """Get embeddings based on provider"""
         if provider == "openai":
             if not settings.OPENAI_API_KEY:
                 raise ValueError("OPENAI_API_KEY not configured")
-            return OpenAIEmbeddings(openai_api_key=settings.OPENAI_API_KEY)
+            kwargs = {"openai_api_key": settings.OPENAI_API_KEY}
+            if model:
+                kwargs["model"] = model
+            return OpenAIEmbeddings(**kwargs)
         elif provider == "gemini":
             if not settings.GOOGLE_API_KEY:
                 raise ValueError("GOOGLE_API_KEY not configured")
             return GoogleGenerativeAIEmbeddings(
-                model="models/embedding-001",
+                model=model or "models/embedding-001",
                 google_api_key=settings.GOOGLE_API_KEY
             )
         else:
@@ -90,9 +93,13 @@ class AIAgentService:
             return []
     
     @staticmethod
-    def _create_vector_store(embedding_provider: str = "openai", conversation_id: Optional[str] = None):
+    def _create_vector_store(
+        embedding_provider: str = "openai", 
+        embedding_model: Optional[str] = None,
+        conversation_id: Optional[str] = None
+    ):
         """Create or get vector store for a conversation"""
-        cache_key = f"{embedding_provider}_{conversation_id or 'default'}"
+        cache_key = f"{embedding_provider}_{embedding_model or 'default'}_{conversation_id or 'default'}"
         
         if cache_key in AIAgentService._vector_stores:
             return AIAgentService._vector_stores[cache_key]
@@ -112,7 +119,7 @@ class AIAgentService:
             texts.extend(text_splitter.split_text(doc))
         
         # Create embeddings
-        embeddings = AIAgentService._get_embeddings(embedding_provider)
+        embeddings = AIAgentService._get_embeddings(embedding_provider, embedding_model)
         
         # Create vector store using ChromaDB (persistent storage)
         # Use a unique collection name per embedding provider
@@ -142,17 +149,22 @@ class AIAgentService:
     def _get_chain(
         conversation_id: str,
         embedding_provider: str = "openai",
+        embedding_model: Optional[str] = None,
         llm_provider: str = "openai",
         llm_model: Optional[str] = None
     ):
         """Get or create chain for a conversation"""
-        cache_key = f"{conversation_id}_{embedding_provider}_{llm_provider}_{llm_model or 'default'}"
+        cache_key = f"{conversation_id}_{embedding_provider}_{embedding_model or 'default'}_{llm_provider}_{llm_model or 'default'}"
         
         if cache_key in AIAgentService._chains:
             return AIAgentService._chains[cache_key]
         
         # Get vector store
-        vector_store = AIAgentService._create_vector_store(embedding_provider, conversation_id)
+        vector_store = AIAgentService._create_vector_store(
+            embedding_provider, 
+            embedding_model,
+            conversation_id
+        )
         
         # Get memory
         memory = AIAgentService._get_memory(conversation_id)
@@ -191,6 +203,7 @@ Answer:"""
         question: str,
         conversation_id: Optional[str] = None,
         embedding_provider: str = "openai",
+        embedding_model: Optional[str] = None,
         llm_provider: str = "openai",
         llm_model: Optional[str] = None,
         user_id: Optional[str] = None
@@ -203,6 +216,7 @@ Answer:"""
             chain = AIAgentService._get_chain(
                 conversation_id,
                 embedding_provider,
+                embedding_model,
                 llm_provider,
                 llm_model
             )
@@ -232,6 +246,7 @@ Answer:"""
         question: str,
         conversation_id: Optional[str] = None,
         embedding_provider: str = "openai",
+        embedding_model: Optional[str] = None,
         llm_provider: str = "openai",
         llm_model: Optional[str] = None,
         user_id: Optional[str] = None
@@ -244,6 +259,7 @@ Answer:"""
             chain = AIAgentService._get_chain(
                 conversation_id,
                 embedding_provider,
+                embedding_model,
                 llm_provider,
                 llm_model
             )

@@ -73,9 +73,22 @@ FIREBASE_CLIENT_ID=your-client-id
 # API Settings
 CORS_ORIGINS=http://localhost:3000
 ENVIRONMENT=development
+
+# Google Cloud Storage
+GCS_BUCKET_NAME=your-bucket-name
+
+# OpenAI (pour l'agent IA)
+OPENAI_API_KEY=sk-...
+
+# Google Gemini (pour l'agent IA)
+GOOGLE_API_KEY=...
+
+# LangSmith (monitoring)
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=your-project-name
 ```
 
-Voir `.env.example` pour la liste complète.
+Voir la documentation complète dans `docs/AI_AGENT_CONFIG.md` pour plus de détails sur la configuration de l'agent IA.
 
 ## 📚 Documentation API
 

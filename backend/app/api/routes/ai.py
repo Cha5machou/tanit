@@ -234,6 +234,7 @@ async def query_agent(
     # Get agent config
     config = FirestoreService.get_agent_config()
     embedding_provider = config.get("embedding_provider", "openai") if config else "openai"
+    embedding_model = config.get("embedding_model") if config else None
     llm_provider = config.get("llm_provider", "openai") if config else "openai"
     llm_model = config.get("llm_model") if config else None
     
@@ -251,6 +252,7 @@ async def query_agent(
             question=request.question,
             conversation_id=conversation_id,
             embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
             llm_provider=llm_provider,
             llm_model=llm_model,
             user_id=user_id
@@ -288,6 +290,7 @@ async def query_agent_stream(
     # Get agent config
     config = FirestoreService.get_agent_config()
     embedding_provider = config.get("embedding_provider", "openai") if config else "openai"
+    embedding_model = config.get("embedding_model") if config else None
     llm_provider = config.get("llm_provider", "openai") if config else "openai"
     llm_model = config.get("llm_model") if config else None
     
@@ -305,6 +308,7 @@ async def query_agent_stream(
                 question=request.question,
                 conversation_id=conversation_id,
                 embedding_provider=embedding_provider,
+                embedding_model=embedding_model,
                 llm_provider=llm_provider,
                 llm_model=llm_model,
                 user_id=user_id

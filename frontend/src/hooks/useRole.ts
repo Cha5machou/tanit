@@ -1,19 +1,25 @@
 'use client'
 
+import { useMemo } from 'react'
 import { useAuth } from './useAuth'
 import { UserRole } from '@/types'
 
 export function useRole() {
   const { user } = useAuth()
 
-  const hasRole = (role: UserRole): boolean => {
-    if (!user) return false
-    return user.role === role
-  }
+  const hasRole = useMemo(() => {
+    return (role: UserRole): boolean => {
+      if (!user || !user.role) return false
+      return user.role === role
+    }
+  }, [user])
 
-  const isAdmin = (): boolean => {
-    return hasRole('admin')
-  }
+  const isAdmin = useMemo(() => {
+    return (): boolean => {
+      if (!user || !user.role) return false
+      return user.role === 'admin'
+    }
+  }, [user])
 
   return {
     hasRole,

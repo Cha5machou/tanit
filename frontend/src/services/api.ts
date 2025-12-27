@@ -190,5 +190,10 @@ export const api = {
     const response = await fetchWithAuth(`${API_V1_URL}/monitoring/langsmith/dashboard`)
     return response.json()
   },
+
+  async getConversationStats(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/monitoring/stats/conversations`)
+    return response.json()
+  },
 }
 
