@@ -19,12 +19,17 @@ app = FastAPI(
 )
 
 # CORS middleware
+# For streaming responses, we need to ensure CORS headers are properly set
+# Use wildcard "*" for allow_origins if empty list, but prefer explicit origins
+cors_origins = settings.CORS_ORIGINS if settings.CORS_ORIGINS else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # Include routers

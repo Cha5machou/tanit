@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Response, Request
 from app.api.deps import get_admin_user, get_current_user
+from app.core.config import settings
 from app.services.storage import StorageService
 from app.services.ai_agent import AIAgentService
 from app.services.firestore import FirestoreService
@@ -15,6 +15,8 @@ from app.schemas.ai import (
     StreamChunk,
     ConversationSummary,
     Conversation,
+    ConversationCreate,
+    ConversationCreateResponse,
     Message,
 )
 from typing import Dict, Any, List
@@ -267,10 +269,8 @@ async def query_agent(
     if not conversation_id:
         conversation_id = FirestoreService.create_conversation(user_id, title=request.question[:50])
     
-    # Save user message
-    FirestoreService.add_message_to_conversation(conversation_id, "user", request.question)
-    
-    # Query AI agent
+    # Query AI agent FIRST (before saving user message) so memory can load existing history
+    # The memory will load all previous messages, then we'll add the current question
     start_time = time.time()
     try:
         result = await AIAgentService.query(
@@ -288,6 +288,9 @@ async def query_agent(
         
         latency_ms = (time.time() - start_time) * 1000
         
+        # Save user message AFTER query (so memory loads previous messages without current question)
+        FirestoreService.add_message_to_conversation(conversation_id, "user", request.question)
+        
         # Save assistant message
         FirestoreService.add_message_to_conversation(conversation_id, "assistant", result["answer"])
         
@@ -304,63 +307,26 @@ async def query_agent(
         )
 
 
-@router.post("/query/stream")
-async def query_agent_stream(
-    request: QueryRequest,
+# Conversation Routes (Authenticated users)
+@router.post("/conversations", response_model=ConversationCreateResponse)
+async def create_conversation(
+    request: ConversationCreate,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """
-    Query the AI agent (streaming response)
+    Create a new conversation
     """
     user_id = current_user["uid"]
-    conversation_id = request.conversation_id
+    title = request.title or "New Conversation"
+    conversation_id = FirestoreService.create_conversation(user_id, title)
     
-    # Get agent config
-    config = FirestoreService.get_agent_config()
-    embedding_provider = config.get("embedding_provider", "openai") if config else "openai"
-    embedding_model = config.get("embedding_model") if config else None
-    llm_provider = config.get("llm_provider", "openai") if config else "openai"
-    llm_model = config.get("llm_model") if config else None
-    system_prompt = config.get("system_prompt") if config else None
-    chunk_size = config.get("chunk_size", 1000) if config else 1000
-    chunk_overlap = config.get("chunk_overlap", 200) if config else 200
-    
-    # Create conversation if needed
-    if not conversation_id:
-        conversation_id = FirestoreService.create_conversation(user_id, title=request.question[:50])
-    
-    # Save user message
-    FirestoreService.add_message_to_conversation(conversation_id, "user", request.question)
-    
-    async def generate_stream():
-        full_answer = ""
-        try:
-            async for chunk in AIAgentService.query_stream(
-                question=request.question,
-                conversation_id=conversation_id,
-                embedding_provider=embedding_provider,
-                embedding_model=embedding_model,
-                llm_provider=llm_provider,
-                llm_model=llm_model,
-                system_prompt=system_prompt,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                user_id=user_id
-            ):
-                full_answer += chunk
-                yield f"data: {json.dumps({'chunk': chunk, 'conversation_id': conversation_id, 'done': False})}\n\n"
-            
-            # Save assistant message
-            FirestoreService.add_message_to_conversation(conversation_id, "assistant", full_answer)
-            
-            yield f"data: {json.dumps({'chunk': '', 'conversation_id': conversation_id, 'done': True})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e), 'conversation_id': conversation_id, 'done': True})}\n\n"
-    
-    return StreamingResponse(generate_stream(), media_type="text/event-stream")
+    return ConversationCreateResponse(
+        conversation_id=conversation_id,
+        title=title,
+        created_at=datetime.utcnow().isoformat()
+    )
 
 
-# Conversation Routes (Authenticated users)
 @router.get("/conversations", response_model=List[ConversationSummary])
 async def list_conversations(
     current_user: Dict[str, Any] = Depends(get_current_user)

@@ -19,12 +19,18 @@ async function fetchWithAuth(
 ): Promise<Response> {
   const token = await getIdToken()
   
+  if (!token) {
+    console.error('No authentication token available')
+    throw new ApiError(
+      401,
+      'Unauthorized',
+      'No authentication token available'
+    )
+  }
+  
   const headers = new Headers(options.headers)
   headers.set('Content-Type', 'application/json')
-  
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
+  headers.set('Authorization', `Bearer ${token}`)
   
   const response = await fetch(url, {
     ...options,
@@ -32,10 +38,12 @@ async function fetchWithAuth(
   })
   
   if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText)
+    console.error(`API Error ${response.status}: ${errorText}`)
     throw new ApiError(
       response.status,
       response.statusText,
-      `API Error: ${response.status} ${response.statusText}`
+      `API Error: ${response.status} ${response.statusText} - ${errorText}`
     )
   }
   

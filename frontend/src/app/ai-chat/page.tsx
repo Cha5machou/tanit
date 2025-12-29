@@ -5,6 +5,8 @@ import { AuthGuard } from '@/components/AuthGuard'
 import { Button } from '@/components/ui/Button'
 import { useRouter } from 'next/navigation'
 import { api } from '@/services/api'
+import { API_V1_URL } from '@/lib/constants'
+import { getIdToken } from '@/services/auth'
 
 interface Message {
   role: 'user' | 'assistant'

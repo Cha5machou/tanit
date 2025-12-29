@@ -88,10 +88,13 @@ class AIAgentService:
     def _create_vector_store(
         embedding_provider: str = "openai", 
         embedding_model: Optional[str] = None,
-        conversation_id: Optional[str] = None
+        conversation_id: Optional[str] = None,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200
     ):
         """Create or get vector store for a conversation"""
-        cache_key = f"{embedding_provider}_{embedding_model or 'default'}_{conversation_id or 'default'}"
+        # Include chunk_size and chunk_overlap in cache key since they affect the vector store
+        cache_key = f"{embedding_provider}_{embedding_model or 'default'}_{conversation_id or 'default'}_{chunk_size}_{chunk_overlap}"
         
         if cache_key in AIAgentService._vector_stores:
             return AIAgentService._vector_stores[cache_key]
@@ -101,10 +104,10 @@ class AIAgentService:
         if not documents:
             raise ValueError("No documents available. Please upload documents first.")
         
-        # Split documents
+        # Split documents with provided chunk parameters
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
         )
         texts = []
         for doc in documents:
@@ -129,36 +132,37 @@ class AIAgentService:
     @staticmethod
     def _get_memory(conversation_id: str, user_id: Optional[str] = None) -> ConversationBufferMemory:
         """Get or create memory for a conversation, loading history from Firestore if available"""
-        if conversation_id not in AIAgentService._memories:
-            memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                return_messages=True,
-                output_key="answer"
-            )
-            
-            # Load conversation history from Firestore if available
-            if user_id:
-                try:
-                    conv_data = FirestoreService.get_conversation(conversation_id, user_id)
-                    if conv_data and conv_data.get("messages"):
-                        # Load messages into memory (skip the last user message if it's the current question)
-                        messages = conv_data.get("messages", [])
-                        # Load all messages except the last one if it's a user message (current question)
-                        # This ensures the current question isn't duplicated in memory
-                        for msg in messages[:-1]:  # Exclude last message as it's the current question
-                            content = msg.get("content", "")
-                            if content:  # Only add non-empty messages
-                                if msg.get("role") == "user":
-                                    memory.chat_memory.add_user_message(HumanMessage(content=content))
-                                elif msg.get("role") == "assistant":
-                                    memory.chat_memory.add_ai_message(AIMessage(content=content))
-                        logger.info(f"Loaded {len(messages) - 1} messages from Firestore for conversation {conversation_id}")
-                except Exception as e:
-                    logger.warning(f"Could not load conversation history from Firestore: {e}")
-            
-            AIAgentService._memories[conversation_id] = memory
+        # Always reload memory from Firestore to ensure it's up to date with latest messages
+        memory = ConversationBufferMemory(
+            memory_key="chat_history",
+            return_messages=True,
+            output_key="answer"
+        )
         
-        return AIAgentService._memories[conversation_id]
+        # Load conversation history from Firestore if available
+        if user_id and conversation_id:
+            try:
+                conv_data = FirestoreService.get_conversation(conversation_id, user_id)
+                if conv_data and conv_data.get("messages"):
+                    messages = conv_data.get("messages", [])
+                    # Load ALL previous messages (the current question hasn't been saved yet)
+                    # The ConversationalRetrievalChain will add the current question automatically
+                    for msg in messages:
+                        content = msg.get("content", "")
+                        if content:  # Only add non-empty messages
+                            if msg.get("role") == "user":
+                                memory.chat_memory.add_user_message(HumanMessage(content=content))
+                            elif msg.get("role") == "assistant":
+                                memory.chat_memory.add_ai_message(AIMessage(content=content))
+                    logger.info(f"Loaded {len(messages)} messages from Firestore for conversation {conversation_id}")
+            except Exception as e:
+                logger.warning(f"Could not load conversation history from Firestore: {e}")
+                import traceback
+                logger.warning(traceback.format_exc())
+        
+        # Store in cache for this request (will be reloaded next time)
+        AIAgentService._memories[conversation_id] = memory
+        return memory
     
     @staticmethod
     def _get_chain(
@@ -173,10 +177,8 @@ class AIAgentService:
         user_id: Optional[str] = None
     ):
         """Get or create chain for a conversation"""
-        cache_key = f"{conversation_id}_{embedding_provider}_{embedding_model or 'default'}_{llm_provider}_{llm_model or 'default'}_{system_prompt or 'default'}_{chunk_size}_{chunk_overlap}"
-        
-        if cache_key in AIAgentService._chains:
-            return AIAgentService._chains[cache_key]
+        # Don't cache chains - memory needs to be reloaded each time to get latest conversation history
+        # Always create a fresh chain with fresh memory
         
         # Get vector store
         vector_store = AIAgentService._create_vector_store(
@@ -187,7 +189,7 @@ class AIAgentService:
             chunk_overlap=chunk_overlap
         )
         
-        # Get memory (will load history from Firestore if available)
+        # Get memory (always reload to get latest conversation history)
         memory = AIAgentService._get_memory(conversation_id, user_id)
         
         # Get LLM
@@ -216,7 +218,7 @@ Answer:"""
             input_variables=["context", "question"]
         )
         
-        # Create chain
+        # Create chain (don't cache - memory needs to be fresh each time)
         chain = ConversationalRetrievalChain.from_llm(
             llm=llm,
             retriever=vector_store.as_retriever(search_kwargs={"k": 3}),
@@ -225,7 +227,6 @@ Answer:"""
             return_source_documents=True
         )
         
-        AIAgentService._chains[cache_key] = chain
         return chain
     
     @staticmethod

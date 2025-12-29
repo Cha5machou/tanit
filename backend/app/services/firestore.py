@@ -1,4 +1,5 @@
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from app.core.logging import logger
@@ -173,10 +174,12 @@ class FirestoreService:
             if not doc.exists:
                 raise ValueError(f"Conversation {conversation_id} not found")
             
+            # Use datetime.utcnow() for message timestamp since SERVER_TIMESTAMP
+            # cannot be used inside ArrayUnion
             message = {
                 "role": role,
                 "content": content,
-                "timestamp": firestore.SERVER_TIMESTAMP,
+                "timestamp": datetime.utcnow(),
             }
             
             doc_ref.update({
@@ -213,23 +216,59 @@ class FirestoreService:
         try:
             db = get_db()
             conversations_ref = db.collection("conversations")
-            query = conversations_ref.where("user_id", "==", user_id).order_by("updated_at", direction=firestore.Query.DESCENDING)
+            # Filter by user_id only (no order_by to avoid index requirement)
+            # Use FieldFilter to avoid deprecation warning
+            query = conversations_ref.where(filter=FieldFilter("user_id", "==", user_id))
             docs = query.stream()
             
             conversations = []
             for doc in docs:
                 data = doc.to_dict()
+                messages = data.get("messages", [])
+                
+                # Get title: use first user message if available, otherwise use stored title
+                title = data.get("title", "Untitled")
+                if messages:
+                    # Find first user message
+                    first_user_msg = next((msg for msg in messages if msg.get("role") == "user"), None)
+                    if first_user_msg:
+                        title = first_user_msg.get("content", title)[:50]  # First 50 chars of first question
+                
+                # Convert Firestore timestamps to datetime if needed
+                updated_at = data.get("updated_at")
+                created_at = data.get("created_at")
+                
+                # Handle Firestore Timestamp objects
+                if hasattr(updated_at, 'timestamp'):
+                    updated_at = datetime.fromtimestamp(updated_at.timestamp())
+                elif isinstance(updated_at, datetime):
+                    pass  # Already a datetime
+                else:
+                    updated_at = datetime.utcnow()  # Fallback
+                
+                if hasattr(created_at, 'timestamp'):
+                    created_at = datetime.fromtimestamp(created_at.timestamp())
+                elif isinstance(created_at, datetime):
+                    pass  # Already a datetime
+                else:
+                    created_at = datetime.utcnow()  # Fallback
+                
                 conversations.append({
                     "conversation_id": doc.id,
-                    "title": data.get("title", "Untitled"),
-                    "created_at": data.get("created_at"),
-                    "updated_at": data.get("updated_at"),
-                    "message_count": len(data.get("messages", [])),
+                    "title": title,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                    "message_count": len(messages),
                 })
+            
+            # Sort in Python memory by updated_at descending
+            conversations.sort(key=lambda x: x["updated_at"], reverse=True)
             
             return conversations
         except Exception as e:
             logger.error(f"Error listing conversations: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
     @staticmethod

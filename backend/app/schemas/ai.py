@@ -99,3 +99,13 @@ class ConversationSummary(BaseModel):
     updated_at: str
     message_count: int
 
+
+class ConversationCreate(BaseModel):
+    title: Optional[str] = Field(None, description="Conversation title")
+
+
+class ConversationCreateResponse(BaseModel):
+    conversation_id: str
+    title: str
+    created_at: str
+
