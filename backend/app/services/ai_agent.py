@@ -196,18 +196,25 @@ class AIAgentService:
         llm = AIAgentService._get_llm(llm_provider, llm_model)
         
         # Create prompt template with system prompt if provided
+        # Include chat_history so the LLM can reference previous conversation
         if system_prompt:
             template = f"""{system_prompt}
 
-Context: {{context}}
+Historique de la conversation:
+{{chat_history}}
+
+Contexte (documents): {{context}}
 
 Question: {{question}}
 
-Answer:"""
+Réponse:"""
         else:
-            template = """You are a helpful AI assistant that answers questions based on the provided context.
-        
-Context: {context}
+            template = """You are a helpful AI assistant that answers questions based on the provided context and conversation history.
+
+Conversation History:
+{chat_history}
+
+Context (documents): {context}
 
 Question: {question}
 
@@ -215,7 +222,7 @@ Answer:"""
         
         prompt = PromptTemplate(
             template=template,
-            input_variables=["context", "question"]
+            input_variables=["chat_history", "context", "question"]
         )
         
         # Create chain (don't cache - memory needs to be fresh each time)
@@ -258,6 +265,14 @@ Answer:"""
                 chunk_overlap,
                 user_id
             )
+            
+            # Debug: Check memory state before query
+            if conversation_id in AIAgentService._memories:
+                memory = AIAgentService._memories[conversation_id]
+                chat_history = memory.chat_memory.messages
+                logger.info(f"Memory state before query - {len(chat_history)} messages in memory")
+                if chat_history:
+                    logger.debug(f"First few messages: {[(type(m).__name__, getattr(m, 'content', '')[:50]) for m in chat_history[:4]]}")
             
             # Run chain
             result = await chain.ainvoke({"question": question})

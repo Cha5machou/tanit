@@ -283,7 +283,7 @@ export default function AIChatPage() {
         setStreamContent(displayedText)
         
         // Continue displaying next word with delay
-        wordDisplayTimeoutRef.current = setTimeout(displayNextWord, 100) // 100ms delay between words
+        wordDisplayTimeoutRef.current = setTimeout(displayNextWord, 25) // 25ms delay between words
       }
       
       // Start displaying words
