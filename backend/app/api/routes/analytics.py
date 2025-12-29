@@ -94,6 +94,25 @@ async def get_analytics_overview(
         single_page_sessions = sum(1 for user_id, visit_times in user_sessions.items() if len(visit_times) == 1)
         bounce_rate = single_page_sessions / total_sessions if total_sessions > 0 else 0
         
+        # Country distribution: Get nationality from profiles
+        profiles_ref = db.collection("profiles")
+        profiles = profiles_ref.stream()
+        country_counts = defaultdict(int)
+        
+        for profile_doc in profiles:
+            profile_data = profile_doc.to_dict()
+            nationalite = profile_data.get("nationalite")
+            if nationalite:
+                country_counts[nationalite] += 1
+            else:
+                country_counts["Unknown"] += 1
+        
+        # Create country distribution data
+        country_distribution = [
+            {"country": country, "count": count}
+            for country, count in sorted(country_counts.items(), key=lambda x: x[1], reverse=True)
+        ]
+        
         return {
             "total_users": total_users,
             "active_sessions": active_sessions,
@@ -102,6 +121,7 @@ async def get_analytics_overview(
             "avg_session_duration_minutes": round(avg_session_duration / 60, 2),
             "pages_per_session": round(pages_per_session, 2),
             "bounce_rate": round(bounce_rate * 100, 2),  # Percentage
+            "country_distribution": country_distribution,
         }
     except Exception as e:
         import traceback
@@ -350,11 +370,125 @@ async def get_engagement_analytics(
         exit_pages_data = [{"page": k, "count": v} for k, v in sorted(exit_pages.items(), key=lambda x: x[1], reverse=True)[:10]]
         entry_pages_data = [{"page": k, "count": v} for k, v in sorted(entry_pages.items(), key=lambda x: x[1], reverse=True)[:10]]
         
+        # Sankey data: Two distinct levels
+        # Level 1 (sources): previous_page
+        # Level 2 (targets): page_path
+        # Even if same name appears in both levels, they are separate nodes
+        sankey_links = defaultdict(int)
+        source_pages = set()
+        target_pages = set()
+        
+        for visit in page_visits:
+            page_path = visit.get("page_path")
+            previous_page = visit.get("previous_page")
+            
+            # Only process if both page_path and previous_page exist
+            if page_path and previous_page:
+                source = previous_page if previous_page else "unknown"
+                target = page_path if page_path else "unknown"
+                
+                # Skip if source and target are the same (no self-loops)
+                if source != target:
+                    sankey_links[(source, target)] += 1
+                    source_pages.add(source)
+                    target_pages.add(target)
+        
+        # Create two separate node lists: sources and targets
+        # Sources (previous_page) - Level 1
+        source_nodes_list = sorted(source_pages)
+        source_to_index = {page: idx for idx, page in enumerate(source_nodes_list)}
+        
+        # Targets (page_path) - Level 2
+        target_nodes_list = sorted(target_pages)
+        target_to_index = {page: idx + len(source_nodes_list) for idx, page in enumerate(target_nodes_list)}
+        
+        # Combine nodes: sources first, then targets
+        sankey_nodes = (
+            [{"name": page, "level": 1} for page in source_nodes_list] +
+            [{"name": page, "level": 2} for page in target_nodes_list]
+        )
+        
+        # Create links (transitions from previous_page to page_path)
+        sankey_links_data = [
+            {
+                "source": source_to_index[source],
+                "target": target_to_index[target],
+                "value": count,
+            }
+            for (source, target), count in sankey_links.items()
+        ]
+        
+        # Funnel data: Group by session_id, sort by start_time
+        # Count: login, formulaire (onboarding), home, then AI or Map
+        session_visits = defaultdict(list)
+        for visit in page_visits:
+            session_id = visit.get("session_id")
+            page_path = visit.get("page_path", "")
+            start_time = visit.get("start_time")
+            
+            if session_id and page_path and start_time:
+                # Convert start_time to datetime for sorting
+                if isinstance(start_time, str):
+                    try:
+                        start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    except:
+                        continue
+                elif hasattr(start_time, 'timestamp'):
+                    start_time = datetime.fromtimestamp(start_time.timestamp())
+                elif not isinstance(start_time, datetime):
+                    continue
+                
+                # Normalize page paths
+                normalized_page = None
+                if page_path == "/login":
+                    normalized_page = "login"
+                elif page_path == "/onboarding":
+                    normalized_page = "formulaire"
+                elif page_path == "/home" or page_path == "/":
+                    normalized_page = "home"
+                elif page_path.startswith("/ai"):
+                    normalized_page = "ai"
+                elif page_path.startswith("/map"):
+                    normalized_page = "map"
+                
+                if normalized_page:
+                    session_visits[session_id].append({
+                        "page": normalized_page,
+                        "time": start_time,
+                    })
+        
+        # Sort visits within each session by start_time
+        for session_id in session_visits:
+            session_visits[session_id].sort(key=lambda x: x["time"])
+        
+        # Page visits count: Simple count of page_path visits (for horizontal bar chart)
+        page_path_counts = defaultdict(int)
+        
+        for visit in page_visits:
+            page_path = visit.get("page_path")
+            if page_path:
+                page_path_counts[page_path] += 1
+        
+        # Create page visits data: simple count of each page_path
+        page_visits_data = []
+        sorted_pages = sorted(page_path_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        for page_path, count in sorted_pages:
+            page_visits_data.append({
+                "page": page_path,
+                "count": count
+            })
+        
         return {
             "time_per_page": time_per_page,
             "page_flow": page_flow_data,
             "exit_pages": exit_pages_data,
             "entry_pages": entry_pages_data,
+            "sankey": {
+                "nodes": sankey_nodes,
+                "links": sankey_links_data,
+            },
+            "page_visits_count": page_visits_data,
         }
     except Exception as e:
         import traceback
@@ -384,75 +518,197 @@ async def get_acquisition_analytics(
                 logging.info(f"Sample visit data: device_type={page_visits[0].get('device_type')}, referrer={page_visits[0].get('referrer')}, previous_page={page_visits[0].get('previous_page')}")
         
         # Channels: Parse from referrer or UTM params
-        channels = defaultdict(int)
-        devices = defaultdict(int)
-        browsers = defaultdict(int)
-        operating_systems = defaultdict(int)
+        # Use sets to count unique channels/devices/browsers/OS per session_id
+        channels = defaultdict(set)  # Track unique channels per session_id
+        devices = defaultdict(set)  # Track unique devices per session_id
+        browsers = defaultdict(set)  # Track unique browsers per session_id
+        operating_systems = defaultdict(set)  # Track unique OS per session_id
+        
+        # Track unique channels/devices/browsers/OS per session_id
+        session_channels = defaultdict(set)
+        session_devices = defaultdict(set)
+        session_browsers = defaultdict(set)
+        session_os = defaultdict(set)
         
         for visit in page_visits:
+            # Skip non-login pages for channel counting (only count login page)
+            page_path = visit.get("page_path", "")
+            if page_path != "/login" and page_path != "/":
+                # Still process for devices/browsers/OS, but skip channel counting
+                session_id = visit.get("session_id")
+                device_type = visit.get("device_type")
+                user_agent = visit.get("user_agent") or ""
+                
+                # Ensure device_type is a string
+                if device_type is None or device_type == "null" or device_type == "None" or device_type == "":
+                    device_type = "unknown"
+                elif not isinstance(device_type, str):
+                    device_type = str(device_type)
+                
+                # Track unique device per session
+                if session_id and device_type:
+                    session_devices[session_id].add(device_type)
+                
+                # Track unique browser per session
+                ua_lower = user_agent.lower()
+                browser = "Other"
+                if "chrome" in ua_lower and "edg" not in ua_lower:
+                    browser = "Chrome"
+                elif "firefox" in ua_lower:
+                    browser = "Firefox"
+                elif "safari" in ua_lower and "chrome" not in ua_lower:
+                    browser = "Safari"
+                elif "edg" in ua_lower:
+                    browser = "Edge"
+                
+                if session_id:
+                    session_browsers[session_id].add(browser)
+                
+                # Track unique OS per session
+                os_name = "Other"
+                if "windows" in ua_lower:
+                    os_name = "Windows"
+                elif "mac" in ua_lower or "darwin" in ua_lower:
+                    os_name = "macOS"
+                elif "linux" in ua_lower:
+                    os_name = "Linux"
+                elif "android" in ua_lower:
+                    os_name = "Android"
+                elif "ios" in ua_lower or "iphone" in ua_lower or "ipad" in ua_lower:
+                    os_name = "iOS"
+                
+                if session_id:
+                    session_os[session_id].add(os_name)
+                
+                continue
+            
+            # Only process login page (or root "/") for channel counting
             # Try multiple ways to get referrer
             referrer = visit.get("referrer") or visit.get("previous_page") or visit.get("referer") or None
+            
+            # Treat localhost:3000 as direct
+            if isinstance(referrer, str) and ("localhost:3000" in referrer or "127.0.0.1:3000" in referrer):
+                referrer = None
+            
             device_type = visit.get("device_type")
-            if not device_type or device_type == "null" or device_type == "None":
+            
+            # Ensure device_type is a string
+            if device_type is None or device_type == "null" or device_type == "None" or device_type == "":
                 device_type = "unknown"
+            elif not isinstance(device_type, str):
+                device_type = str(device_type)
+            
             user_agent = visit.get("user_agent") or ""
+            session_id = visit.get("session_id")
             
-            # Channel detection
-            if not referrer or referrer == "unknown" or referrer == "null" or (isinstance(referrer, str) and referrer.startswith("/")):
-                channels["direct"] += 1
+            # Channel detection - prioritize UTM parameters and custom channel
+            acquisition_channel = visit.get("acquisition_channel")
+            utm_source = visit.get("utm_source")
+            utm_medium = visit.get("utm_medium")
+            
+            # Determine channel name
+            channel_name = None
+            if acquisition_channel:
+                channel_name = str(acquisition_channel) if not isinstance(acquisition_channel, str) else acquisition_channel
+            elif utm_source and utm_medium:
+                # Build channel from UTM parameters
+                utm_source_str = str(utm_source) if not isinstance(utm_source, str) else utm_source
+                utm_medium_str = str(utm_medium) if not isinstance(utm_medium, str) else utm_medium
+                channel_name = f"{utm_source_str}_{utm_medium_str}"
+            elif utm_source:
+                # Use utm_source as channel
+                channel_name = str(utm_source) if not isinstance(utm_source, str) else utm_source
+            elif not referrer or referrer == "unknown" or referrer == "null" or (isinstance(referrer, str) and referrer.startswith("/")):
+                channel_name = "direct"
             elif isinstance(referrer, str) and "google" in referrer.lower():
-                channels["organic_search"] += 1
+                channel_name = "organic_search"
             elif isinstance(referrer, str) and any(social in referrer.lower() for social in ["facebook", "twitter", "instagram", "linkedin"]):
-                channels["social"] += 1
+                channel_name = "social"
             elif referrer and referrer != "unknown" and referrer != "null":
-                channels["referral"] += 1
+                channel_name = "referral"
             else:
-                channels["direct"] += 1
+                channel_name = "direct"
             
-            # Device type - always count, even if unknown
-            devices[device_type] = devices.get(device_type, 0) + 1
+            # Track unique channel per session
+            if session_id and channel_name:
+                session_channels[session_id].add(channel_name)
             
-            # Browser and OS from user_agent
+            # Track unique device per session
+            if session_id and device_type:
+                session_devices[session_id].add(device_type)
+            
+            # Track unique browser per session
             ua_lower = user_agent.lower()
+            browser = "Other"
             if "chrome" in ua_lower and "edg" not in ua_lower:
-                browsers["Chrome"] += 1
+                browser = "Chrome"
             elif "firefox" in ua_lower:
-                browsers["Firefox"] += 1
+                browser = "Firefox"
             elif "safari" in ua_lower and "chrome" not in ua_lower:
-                browsers["Safari"] += 1
+                browser = "Safari"
             elif "edg" in ua_lower:
-                browsers["Edge"] += 1
-            else:
-                browsers["Other"] += 1
+                browser = "Edge"
             
+            if session_id:
+                session_browsers[session_id].add(browser)
+            
+            # Track unique OS per session
+            os_name = "Other"
             if "windows" in ua_lower:
-                operating_systems["Windows"] += 1
+                os_name = "Windows"
             elif "mac" in ua_lower or "darwin" in ua_lower:
-                operating_systems["macOS"] += 1
+                os_name = "macOS"
             elif "linux" in ua_lower:
-                operating_systems["Linux"] += 1
+                os_name = "Linux"
             elif "android" in ua_lower:
-                operating_systems["Android"] += 1
+                os_name = "Android"
             elif "ios" in ua_lower or "iphone" in ua_lower or "ipad" in ua_lower:
-                operating_systems["iOS"] += 1
-            else:
-                operating_systems["Other"] += 1
+                os_name = "iOS"
+            
+            if session_id:
+                session_os[session_id].add(os_name)
+        
+        # Count unique channels per session
+        for session_id, channel_set in session_channels.items():
+            for channel in channel_set:
+                channels[channel].add(session_id)
+        
+        # Count unique devices per session
+        for session_id, device_set in session_devices.items():
+            for device in device_set:
+                devices[device].add(session_id)
+        
+        # Count unique browsers per session
+        for session_id, browser_set in session_browsers.items():
+            for browser in browser_set:
+                browsers[browser].add(session_id)
+        
+        # Count unique OS per session
+        for session_id, os_set in session_os.items():
+            for os_name in os_set:
+                operating_systems[os_name].add(session_id)
+        
+        # Convert sets to counts
+        channels_count = {k: len(v) for k, v in channels.items()}
+        devices_count = {k: len(v) for k, v in devices.items()}
+        browsers_count = {k: len(v) for k, v in browsers.items()}
+        operating_systems_count = {k: len(v) for k, v in operating_systems.items()}
         
         # Ensure we have at least some data even if empty
-        if not channels:
-            channels["direct"] = 0
-        if not devices:
-            devices["unknown"] = 0
-        if not browsers:
-            browsers["Other"] = 0
-        if not operating_systems:
-            operating_systems["Other"] = 0
+        if not channels_count:
+            channels_count["direct"] = 0
+        if not devices_count:
+            devices_count["unknown"] = 0
+        if not browsers_count:
+            browsers_count["Other"] = 0
+        if not operating_systems_count:
+            operating_systems_count["Other"] = 0
         
         return {
-            "channels": [{"channel": k, "count": v} for k, v in sorted(channels.items(), key=lambda x: x[1], reverse=True) if v > 0],
-            "devices": [{"device": k, "count": v} for k, v in sorted(devices.items(), key=lambda x: x[1], reverse=True) if v > 0],
-            "browsers": [{"browser": k, "count": v} for k, v in sorted(browsers.items(), key=lambda x: x[1], reverse=True) if v > 0],
-            "operating_systems": [{"os": k, "count": v} for k, v in sorted(operating_systems.items(), key=lambda x: x[1], reverse=True) if v > 0],
+            "channels": [{"channel": k, "count": v} for k, v in sorted(channels_count.items(), key=lambda x: x[1], reverse=True) if v > 0],
+            "devices": [{"device": k, "count": v} for k, v in sorted(devices_count.items(), key=lambda x: x[1], reverse=True) if v > 0],
+            "browsers": [{"browser": k, "count": v} for k, v in sorted(browsers_count.items(), key=lambda x: x[1], reverse=True) if v > 0],
+            "operating_systems": [{"os": k, "count": v} for k, v in sorted(operating_systems_count.items(), key=lambda x: x[1], reverse=True) if v > 0],
         }
     except Exception as e:
         import traceback

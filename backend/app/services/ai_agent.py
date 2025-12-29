@@ -120,6 +120,9 @@ class AIAgentService:
             raise ValueError("No documents available. Please upload documents first.")
         
         # Split documents with provided chunk parameters
+        import time
+            
+        embedding_start = time.time()
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap
@@ -134,17 +137,15 @@ class AIAgentService:
         # Log embedding request (approximate tokens)
         try:
             from app.services.firestore import FirestoreService
-            import time
             
-            embedding_start = time.time()
             total_text_length = sum(len(text) for text in texts)
             # Rough estimate: 1 token ≈ 4 characters
             estimated_tokens = total_text_length // 4
             
             # Calculate cost (approximate)
-            # OpenAI text-embedding-ada-002: $0.10 per 1M tokens
-            # Gemini embedding-001: $0.02 per 1M tokens
-            cost_per_1k = 0.0001 if embedding_provider == "openai" else 0.00002
+            # OpenAI text-embedding-3-small: $0.02 per 1M tokens = $0.00002 per 1K tokens
+            # Google text-embedding-3-small: $0.15 per 1M tokens = $0.00015 per 1K tokens
+            cost_per_1k = 0.00002 if embedding_provider == "openai" else 0.00015
             cost_usd = (estimated_tokens * cost_per_1k / 1000)
             
             embedding_latency = (time.time() - embedding_start) * 1000

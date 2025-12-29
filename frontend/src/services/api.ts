@@ -256,24 +256,31 @@ export const api = {
     }
   },
 
-  async endPageVisit(visitId: string, endTime: Date): Promise<void> {
+  async endPageVisit(visitId: string, endTime: Date): Promise<any> {
     try {
       const token = await getIdToken()
       if (!token) {
         // Silently fail if no token (user not authenticated)
-        return
+        console.warn('[API] No token available for endPageVisit')
+        return null
       }
       
-      await fetchWithAuth(`${API_V1_URL}/auth/page-visit/end`, {
+      console.log(`[API] Ending page visit ${visitId} at ${endTime.toISOString()}`)
+      const response = await fetchWithAuth(`${API_V1_URL}/auth/page-visit/end`, {
         method: 'POST',
         body: JSON.stringify({
           visit_id: visitId,
           end_time: endTime.toISOString(),
         }),
       })
+      
+      const data = await response.json()
+      console.log(`[API] Successfully ended page visit ${visitId}:`, data)
+      return data
     } catch (error) {
-      // Silently fail - don't break the app if tracking fails
-      console.warn('Failed to end page visit:', error)
+      // Don't silently fail - log the error for debugging
+      console.error('[API] Failed to end page visit:', error)
+      throw error
     }
   },
 
@@ -312,6 +319,107 @@ export const api = {
   async getAITracesAnalytics(): Promise<any> {
     const response = await fetchWithAuth(`${API_V1_URL}/ai-analytics/traces`)
     return response.json()
+  },
+
+  // Close inactive visits
+  async closeInactiveVisits(inactivityMinutes: number = 30): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/monitoring/close-inactive-visits?inactivity_minutes=${inactivityMinutes}`, {
+      method: 'POST',
+    })
+    return response.json()
+  },
+
+  // POI endpoints
+  async createPOI(data: {
+    name: string
+    lat: number
+    lng: number
+    description: string
+    is_ad: boolean
+    photo?: File
+    audio?: File
+  }): Promise<any> {
+    const token = await getIdToken()
+    const formData = new FormData()
+    formData.append('name', data.name)
+    formData.append('lat', data.lat.toString())
+    formData.append('lng', data.lng.toString())
+    formData.append('description', data.description)
+    formData.append('is_ad', data.is_ad.toString())
+    if (data.photo) {
+      formData.append('photo', data.photo)
+    }
+    if (data.audio) {
+      formData.append('audio', data.audio)
+    }
+    
+    const response = await fetch(`${API_V1_URL}/poi`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText, 'Failed to create POI')
+    }
+    
+    return response.json()
+  },
+
+  async listPOIs(): Promise<any[]> {
+    const response = await fetchWithAuth(`${API_V1_URL}/poi`)
+    return response.json()
+  },
+
+  async getPOI(poiId: string): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/poi/${poiId}`)
+    return response.json()
+  },
+
+  async updatePOI(poiId: string, data: {
+    name?: string
+    lat?: number
+    lng?: number
+    description?: string
+    is_ad?: boolean
+    photo?: File
+    audio?: File
+  }): Promise<any> {
+    const token = await getIdToken()
+    const formData = new FormData()
+    if (data.name !== undefined) formData.append('name', data.name)
+    if (data.lat !== undefined) formData.append('lat', data.lat.toString())
+    if (data.lng !== undefined) formData.append('lng', data.lng.toString())
+    if (data.description !== undefined) formData.append('description', data.description)
+    if (data.is_ad !== undefined) formData.append('is_ad', data.is_ad.toString())
+    if (data.photo) {
+      formData.append('photo', data.photo)
+    }
+    if (data.audio) {
+      formData.append('audio', data.audio)
+    }
+    
+    const response = await fetch(`${API_V1_URL}/poi/${poiId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText, 'Failed to update POI')
+    }
+    
+    return response.json()
+  },
+
+  async deletePOI(poiId: string): Promise<void> {
+    await fetchWithAuth(`${API_V1_URL}/poi/${poiId}`, {
+      method: 'DELETE',
+    })
   },
 }
 

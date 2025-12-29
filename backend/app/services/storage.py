@@ -80,7 +80,7 @@ class StorageService:
     @staticmethod
     def upload_file(file_content: bytes, filename: str, content_type: str = "text/plain") -> Dict[str, Any]:
         """
-        Upload a file to GCS with unique filename to prevent overwrites
+        Upload a file to GCS with unique filename to prevent overwrites (for AI documents)
         
         Args:
             file_content: File content as bytes
@@ -108,9 +108,6 @@ class StorageService:
             blob = bucket.blob(f"ai-documents/{unique_filename}")
             blob.upload_from_string(file_content, content_type=content_type)
             
-            # Make blob publicly readable (optional, adjust based on your needs)
-            # blob.make_public()
-            
             return {
                 "filename": unique_filename,  # Return the unique filename
                 "original_filename": filename,  # Keep original for reference
@@ -129,6 +126,128 @@ class StorageService:
         except Exception as e:
             logger.error(f"Error uploading file to GCS: {str(e)}")
             raise
+    
+    @staticmethod
+    def upload_poi_file(file_content: bytes, filename: str, content_type: str) -> str:
+        """
+        Upload a POI file (photo or audio) to GCS and return public URL
+        
+        Args:
+            file_content: File content as bytes
+            filename: Name of the file (e.g., "photo.jpg" or "audio.mp3")
+            content_type: MIME type of the file
+        
+        Returns:
+            Public URL of the uploaded file
+        """
+        try:
+            bucket = StorageService.get_bucket()
+            
+            # Generate unique filename to prevent overwrites
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            unique_id = str(uuid.uuid4())[:8]
+            base_name = os.path.splitext(filename)[0]
+            extension = os.path.splitext(filename)[1]
+            unique_filename = f"{timestamp}_{unique_id}_{base_name}{extension}"
+            
+            blob = bucket.blob(f"poi-files/{unique_filename}")
+            blob.upload_from_string(file_content, content_type=content_type)
+            
+            # For buckets with uniform bucket-level access, we can't use make_public()
+            # Always generate a signed URL to ensure files are accessible
+            # Valid for 10 years (315360000 seconds)
+            from datetime import timedelta
+            try:
+                signed_url = blob.generate_signed_url(
+                    expiration=datetime.utcnow() + timedelta(seconds=315360000),
+                    method='GET'
+                )
+                logger.info(f"Generated signed URL for POI file: {blob.name}")
+                return signed_url
+            except Exception as e:
+                logger.error(f"Error generating signed URL for {blob.name}: {str(e)}")
+                # Fallback to public_url (might not work if bucket is not public)
+                public_url = blob.public_url
+                logger.warning(f"Falling back to public URL: {public_url}")
+                return public_url
+        except NotFound as e:
+            logger.error(f"GCS bucket not found during POI file upload: {str(e)}")
+            raise ValueError(f"GCS bucket '{settings.GCS_BUCKET_NAME}' not found. Please check your bucket name.")
+        except Forbidden as e:
+            logger.error(f"Access forbidden to GCS bucket during POI file upload: {str(e)}")
+            raise ValueError(f"Access forbidden to GCS bucket '{settings.GCS_BUCKET_NAME}'. Please check your credentials and permissions.")
+        except Exception as e:
+            logger.error(f"Error uploading POI file to GCS: {str(e)}")
+            raise
+    
+    @staticmethod
+    def get_signed_url_for_blob(blob_path: str) -> Optional[str]:
+        """
+        Get a signed URL for an existing blob in GCS
+        
+        Args:
+            blob_path: Path to the blob in GCS (e.g., "poi-files/filename.jpg")
+        
+        Returns:
+            Signed URL or None if blob doesn't exist
+        """
+        try:
+            bucket = StorageService.get_bucket()
+            blob = bucket.blob(blob_path)
+            
+            if not blob.exists():
+                logger.warning(f"Blob does not exist: {blob_path}")
+                return None
+            
+            from datetime import timedelta
+            signed_url = blob.generate_signed_url(
+                expiration=datetime.utcnow() + timedelta(seconds=315360000),  # 10 years
+                method='GET'
+            )
+            logger.info(f"Generated signed URL for existing blob: {blob_path}")
+            return signed_url
+        except Exception as e:
+            logger.error(f"Error generating signed URL for {blob_path}: {str(e)}")
+            return None
+    
+    @staticmethod
+    def convert_public_url_to_signed(public_url: str) -> Optional[str]:
+        """
+        Convert a public GCS URL to a signed URL
+        
+        Args:
+            public_url: Public URL (e.g., "https://storage.googleapis.com/bucket/path/file.jpg")
+        
+        Returns:
+            Signed URL or None if conversion fails
+        """
+        try:
+            # Extract bucket name and blob path from public URL
+            # Format: https://storage.googleapis.com/bucket-name/path/to/file
+            if not public_url.startswith('https://storage.googleapis.com/'):
+                logger.warning(f"Not a GCS public URL: {public_url}")
+                return None
+            
+            # Remove the base URL
+            path = public_url.replace('https://storage.googleapis.com/', '')
+            
+            # Split bucket name and blob path
+            parts = path.split('/', 1)
+            if len(parts) != 2:
+                logger.warning(f"Invalid GCS URL format: {public_url}")
+                return None
+            
+            bucket_name, blob_path = parts
+            
+            # Verify it's the correct bucket
+            if bucket_name != settings.GCS_BUCKET_NAME:
+                logger.warning(f"URL bucket ({bucket_name}) doesn't match configured bucket ({settings.GCS_BUCKET_NAME})")
+                return None
+            
+            return StorageService.get_signed_url_for_blob(blob_path)
+        except Exception as e:
+            logger.error(f"Error converting public URL to signed URL: {str(e)}")
+            return None
     
     @staticmethod
     def list_files() -> List[Dict[str, Any]]:

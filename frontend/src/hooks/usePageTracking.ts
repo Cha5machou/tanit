@@ -39,6 +39,21 @@ export function usePageTracking() {
     if (!isAuthenticated) return
     
     try {
+      // Restore visitId from sessionStorage if available
+      const storedVisitId = sessionStorage.getItem('current_page_visit_id')
+      const storedStartTime = sessionStorage.getItem('current_page_visit_start_time')
+      const storedPath = sessionStorage.getItem('current_page_visit_path')
+      
+      if (storedVisitId && storedPath && storedPath !== pathname) {
+        // We have a previous visit that needs to be closed
+        visitIdRef.current = storedVisitId
+        if (storedStartTime) {
+          startTimeRef.current = new Date(storedStartTime)
+        }
+        previousPathnameRef.current = storedPath
+      }
+      
+      // Handle any pending visit end
       const pending = sessionStorage.getItem('pending_page_visit_end')
       if (pending) {
         const data = JSON.parse(pending)
@@ -50,6 +65,7 @@ export function usePageTracking() {
       }
     } catch (e) {
       // Silently fail
+      console.warn('[PageTracking] Error restoring visit state:', e)
     }
   }, [isAuthenticated])
 
@@ -62,27 +78,65 @@ export function usePageTracking() {
 
     // Close previous page visit if pathname changed
     const closePreviousVisit = async () => {
-      if (visitIdRef.current && previousPathnameRef.current && previousPathnameRef.current !== pathname) {
+      // Try to get visitId from ref first, then from sessionStorage
+      let currentVisitId = visitIdRef.current
+      if (!currentVisitId) {
+        currentVisitId = sessionStorage.getItem('current_page_visit_id')
+      }
+      
+      let currentPath = previousPathnameRef.current
+      if (!currentPath) {
+        currentPath = sessionStorage.getItem('current_page_visit_path')
+      }
+      
+      let currentStartTime = startTimeRef.current
+      if (!currentStartTime && sessionStorage.getItem('current_page_visit_start_time')) {
+        currentStartTime = new Date(sessionStorage.getItem('current_page_visit_start_time')!)
+      }
+      
+      // Only close if we have a visit ID, a previous path, and pathname has changed
+      if (currentVisitId && currentPath && currentPath !== pathname) {
         const endTime = new Date()
         try {
-          await api.endPageVisit(visitIdRef.current, endTime)
+          const duration = currentStartTime ? (endTime.getTime() - currentStartTime.getTime()) / 1000 : 0
+          console.log(`[PageTracking] Closing visit ${currentVisitId} (UUID) for path ${currentPath} -> ${pathname} (duration: ${duration}s)`)
+          
+          const response = await api.endPageVisit(currentVisitId, endTime)
+          console.log(`[PageTracking] Successfully closed visit ${currentVisitId} for ${currentPath}`)
+          
+          // Clear refs and sessionStorage after successful close
           visitIdRef.current = null
           startTimeRef.current = null
+          sessionStorage.removeItem('current_page_visit_id')
+          sessionStorage.removeItem('current_page_visit_start_time')
+          sessionStorage.removeItem('current_page_visit_path')
         } catch (error) {
-          console.warn('Failed to end previous page visit:', error)
+          console.error('[PageTracking] Failed to end previous page visit:', error)
+          // Don't clear refs if update failed - might retry later
+        }
+      } else {
+        if (!currentVisitId) {
+          console.log(`[PageTracking] No visit ID to close (path: ${currentPath} -> ${pathname})`)
+        }
+        if (!currentPath) {
+          console.log(`[PageTracking] No previous path (current path: ${pathname})`)
+        }
+        if (currentPath === pathname) {
+          console.log(`[PageTracking] Path unchanged (${pathname}), not closing`)
         }
       }
     }
 
     // Track page entry
     const trackNewVisit = async () => {
-      // First, close previous visit if exists
+      // First, close previous visit if exists (before updating refs)
       await closePreviousVisit()
 
       const startTime = new Date()
       startTimeRef.current = startTime
       
       // Get previous page (from referrer or previous pathname)
+      // Do this BEFORE updating previousPathnameRef
       let previousPage = previousPathnameRef.current || null
       if (!previousPage && typeof window !== 'undefined') {
         // Try to get from document.referrer
@@ -106,6 +160,63 @@ export function usePageTracking() {
       // Get device type
       const deviceType = getDeviceType()
       
+      // Parse UTM parameters and acquisition channel from URL
+      let utmParams: Record<string, string> = {}
+      let acquisitionChannel: string | null = null
+      
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search)
+        
+        // Extract UTM parameters
+        const utmSource = urlParams.get('utm_source')
+        const utmMedium = urlParams.get('utm_medium')
+        const utmCampaign = urlParams.get('utm_campaign')
+        const utmTerm = urlParams.get('utm_term')
+        const utmContent = urlParams.get('utm_content')
+        
+        if (utmSource) utmParams.utm_source = utmSource
+        if (utmMedium) utmParams.utm_medium = utmMedium
+        if (utmCampaign) utmParams.utm_campaign = utmCampaign
+        if (utmTerm) utmParams.utm_term = utmTerm
+        if (utmContent) utmParams.utm_content = utmContent
+        
+        // Check for custom channel parameter (e.g., ?channel=qr_code)
+        const customChannel = urlParams.get('channel')
+        if (customChannel) {
+          acquisitionChannel = customChannel
+        } else if (utmSource && utmMedium) {
+          // Build channel from UTM parameters
+          acquisitionChannel = `${utmSource}_${utmMedium}`
+        }
+        
+        // Store UTM params in sessionStorage for persistence across pages
+        if (Object.keys(utmParams).length > 0) {
+          try {
+            sessionStorage.setItem('utm_params', JSON.stringify(utmParams))
+            if (acquisitionChannel) {
+              sessionStorage.setItem('acquisition_channel', acquisitionChannel)
+            }
+          } catch (e) {
+            // Silently fail if sessionStorage is not available
+          }
+        } else {
+          // Try to get from sessionStorage if not in URL (for subsequent pages)
+          try {
+            const storedUtm = sessionStorage.getItem('utm_params')
+            if (storedUtm) {
+              utmParams = JSON.parse(storedUtm)
+            }
+            const storedChannel = sessionStorage.getItem('acquisition_channel')
+            if (storedChannel) {
+              acquisitionChannel = storedChannel
+            }
+          } catch (e) {
+            // Silently fail
+          }
+        }
+      }
+      
+      // Update previous pathname AFTER we've closed the previous visit and got previousPage
       previousPathnameRef.current = pathname
 
       try {
@@ -120,9 +231,18 @@ export function usePageTracking() {
           device_type: deviceType,
           previous_page: previousPage,
           session_id: sessionId,
+          ...utmParams,
+          acquisition_channel: acquisitionChannel,
         })
         if (visitId) {
           visitIdRef.current = visitId
+          // Store in sessionStorage for persistence across page navigations
+          sessionStorage.setItem('current_page_visit_id', visitId)
+          sessionStorage.setItem('current_page_visit_start_time', startTime.toISOString())
+          sessionStorage.setItem('current_page_visit_path', pathname)
+          console.log(`[PageTracking] Logged new visit ${visitId} (UUID) for path ${pathname}`)
+        } else {
+          console.warn(`[PageTracking] Failed to get visit ID for path ${pathname}`)
         }
       } catch (error) {
         console.warn('Failed to log page visit:', error)

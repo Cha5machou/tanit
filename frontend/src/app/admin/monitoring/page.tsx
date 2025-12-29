@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Button } from '@/components/ui/Button'
 import { useRouter } from 'next/navigation'
 import { api } from '@/services/api'
+import { useAuth } from '@/hooks/useAuth'
 import {
   LineChart,
   Line,
@@ -22,11 +24,184 @@ import {
   AreaChart,
   Area,
 } from 'recharts'
+// World map component wrapper (loaded dynamically to avoid SSR issues)
+const WorldMapChartWrapper = dynamic(
+  () => import('./WorldMapChart').then(mod => ({ default: mod.WorldMapChart })),
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-96">Chargement de la carte...</div> }
+)
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d']
 
+// Sankey Chart Component - Two distinct levels: Level 1 = previous_page, Level 2 = page_path
+function SankeyChart({ data }: { data: { nodes: Array<{ name: string, level?: number }>, links: Array<{ source: number, target: number, value: number }> } }) {
+  const { nodes, links } = data
+  
+  if (!nodes || !links || nodes.length === 0) {
+    return <div className="text-center text-gray-500 py-8">No flow data available</div>
+  }
+  
+  // Separate nodes by level: Level 1 (sources/previous_page) and Level 2 (targets/page_path)
+  const level1Nodes = nodes.filter(n => n.level === 1 || !n.level || nodes.indexOf(n) < nodes.length / 2)
+  const level2Nodes = nodes.filter(n => n.level === 2 || (n.level !== 1 && nodes.indexOf(n) >= nodes.length / 2))
+  
+  // If no level info, split by index (first half = sources, second half = targets)
+  const sourceNodes = level1Nodes.length > 0 ? level1Nodes : nodes.slice(0, Math.ceil(nodes.length / 2))
+  const targetNodes = level2Nodes.length > 0 ? level2Nodes : nodes.slice(Math.ceil(nodes.length / 2))
+  
+  // Calculate positions: sources on left (Level 1), targets on right (Level 2)
+  const nodeHeight = 30
+  const nodeSpacing = 10
+  const leftColumnX = 50
+  const rightColumnX = 500
+  const columnWidth = 400
+  
+  const nodePositions = new Map<number, { x: number, y: number, name: string }>()
+  
+  // Position source nodes (Level 1 - left column)
+  sourceNodes.forEach((node, idx) => {
+    const nodeIdx = nodes.indexOf(node)
+    const y = idx * (nodeHeight + nodeSpacing) + 50
+    nodePositions.set(nodeIdx, {
+      x: leftColumnX,
+      y: y,
+      name: node.name,
+    })
+  })
+  
+  // Position target nodes (Level 2 - right column)
+  targetNodes.forEach((node, idx) => {
+    const nodeIdx = nodes.indexOf(node)
+    const y = idx * (nodeHeight + nodeSpacing) + 50
+    nodePositions.set(nodeIdx, {
+      x: rightColumnX,
+      y: y,
+      name: node.name,
+    })
+  })
+  
+  const chartHeight = Math.max(sourceNodes.length, targetNodes.length) * (nodeHeight + nodeSpacing) + 100
+  const maxValue = Math.max(...links.map(l => l.value), 1)
+  
+  return (
+    <div className="relative overflow-x-auto" style={{ minHeight: '400px' }}>
+      <svg width="100%" height={chartHeight} className="overflow-visible" style={{ minWidth: '1000px' }}>
+        {/* Draw links */}
+        {links.map((link, idx) => {
+          const source = nodePositions.get(link.source)
+          const target = nodePositions.get(link.target)
+          if (!source || !target) return null
+          
+          const sourceX = source.x + columnWidth
+          const sourceY = source.y + nodeHeight / 2
+          const targetX = target.x
+          const targetY = target.y + nodeHeight / 2
+          
+          // Calculate control points for curved path
+          const controlX1 = sourceX + (targetX - sourceX) * 0.5
+          const controlY1 = sourceY
+          const controlX2 = sourceX + (targetX - sourceX) * 0.5
+          const controlY2 = targetY
+          
+          const path = `M ${sourceX} ${sourceY} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${targetX} ${targetY}`
+          
+          // Width and opacity based on value
+          const opacity = Math.min(0.3 + (link.value / maxValue) * 0.7, 1)
+          const strokeWidth = Math.max(2, Math.min(link.value / (maxValue / 10), 15))
+          
+          return (
+            <g key={idx}>
+              <path
+                d={path}
+                fill="none"
+                stroke="#8884d8"
+                strokeWidth={strokeWidth}
+                opacity={opacity}
+              />
+              <title>{`${source.name} → ${target.name}: ${link.value} transitions`}</title>
+            </g>
+          )
+        })}
+        
+        {/* Draw Level 1 nodes (Previous Page - left column) */}
+        {sourceNodes.map((node, idx) => {
+          const nodeIdx = nodes.indexOf(node)
+          const pos = nodePositions.get(nodeIdx)!
+          return (
+            <g key={`source-${nodeIdx}`}>
+              <rect
+                x={pos.x}
+                y={pos.y}
+                width={columnWidth}
+                height={nodeHeight}
+                fill="#8884d8"
+                rx={4}
+              />
+              <text
+                x={pos.x + columnWidth / 2}
+                y={pos.y + nodeHeight / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="white"
+                fontSize="12"
+                fontWeight="500"
+              >
+                {pos.name}
+              </text>
+            </g>
+          )
+        })}
+        
+        {/* Draw Level 2 nodes (Page Path - right column) */}
+        {targetNodes.map((node, idx) => {
+          const nodeIdx = nodes.indexOf(node)
+          const pos = nodePositions.get(nodeIdx)!
+          return (
+            <g key={`target-${nodeIdx}`}>
+              <rect
+                x={pos.x}
+                y={pos.y}
+                width={columnWidth}
+                height={nodeHeight}
+                fill="#00C49F"
+                rx={4}
+              />
+              <text
+                x={pos.x + columnWidth / 2}
+                y={pos.y + nodeHeight / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="white"
+                fontSize="12"
+                fontWeight="500"
+              >
+                {pos.name}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+      
+      {/* Legend */}
+      <div className="mt-4 text-sm text-gray-600 flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-[#8884d8] rounded"></div>
+          <span>Level 1: Previous Page</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-[#00C49F] rounded"></div>
+          <span>Level 2: Page Path</span>
+        </div>
+        <span className="text-gray-400">|</span>
+        <span>Line thickness represents number of transitions</span>
+      </div>
+    </div>
+  )
+}
+
+
 export default function MonitoringPage() {
   const router = useRouter()
+  const { isAuthenticated, loading: authLoading } = useAuth()
   const [activeTab, setActiveTab] = useState<'analytics' | 'ai'>('analytics')
   const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'traffic' | 'engagement' | 'acquisition'>('overview')
   const [aiTab, setAiTab] = useState<'conversations' | 'performance' | 'traces'>('conversations')
@@ -44,10 +219,14 @@ export default function MonitoringPage() {
   const [tracesData, setTracesData] = useState<any>(null)
   
   const [loading, setLoading] = useState(true)
+  const [closingVisits, setClosingVisits] = useState(false)
 
   useEffect(() => {
-    loadData()
-  }, [analyticsTab, aiTab, trafficPeriod])
+    // Only load data when authenticated and not loading
+    if (!authLoading && isAuthenticated) {
+      loadData()
+    }
+  }, [analyticsTab, aiTab, trafficPeriod, isAuthenticated, authLoading])
 
   const loadData = async () => {
     setLoading(true)
@@ -85,6 +264,21 @@ export default function MonitoringPage() {
     }
   }
 
+  const handleCloseInactiveVisits = async () => {
+    setClosingVisits(true)
+    try {
+      const result = await api.closeInactiveVisits(30)
+      alert(`Fermé ${result.closed_count} visites inactives`)
+      // Reload current tab data
+      await loadData()
+    } catch (error) {
+      console.error('Error closing inactive visits:', error)
+      alert('Erreur lors de la fermeture des visites inactives')
+    } finally {
+      setClosingVisits(false)
+    }
+  }
+
   return (
     <RoleGuard requiredRole="admin">
       <div className="min-h-screen bg-gray-100">
@@ -99,9 +293,18 @@ export default function MonitoringPage() {
                   Analytics détaillés et monitoring de l'utilisation de l'IA
                 </p>
               </div>
-              <Button variant="outline" onClick={() => router.push('/admin')}>
-                Retour
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={handleCloseInactiveVisits}
+                  disabled={closingVisits}
+                >
+                  {closingVisits ? 'Fermeture...' : 'Fermer visites inactives'}
+                </Button>
+                <Button variant="outline" onClick={() => router.push('/admin')}>
+                  Retour
+                </Button>
+              </div>
             </div>
           </div>
         </header>
@@ -231,6 +434,16 @@ export default function MonitoringPage() {
                           </div>
                         </div>
                       </div>
+                      
+                      {/* Country Distribution */}
+                      {overviewData.country_distribution && overviewData.country_distribution.length > 0 && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-lg font-semibold mb-4">User Country Distribution</h3>
+                          <div className="w-full overflow-x-auto">
+                            <WorldMapChartWrapper data={overviewData.country_distribution} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -240,21 +453,21 @@ export default function MonitoringPage() {
                       <div className="flex justify-end">
                         <div className="flex gap-2">
                           <Button
-                            variant={trafficPeriod === 'day' ? 'default' : 'outline'}
+                            variant={trafficPeriod === 'day' ? 'primary' : 'outline'}
                             size="sm"
                             onClick={() => setTrafficPeriod('day')}
                           >
                             Daily
                           </Button>
                           <Button
-                            variant={trafficPeriod === 'week' ? 'default' : 'outline'}
+                            variant={trafficPeriod === 'week' ? 'primary' : 'outline'}
                             size="sm"
                             onClick={() => setTrafficPeriod('week')}
                           >
                             Weekly
                           </Button>
                           <Button
-                            variant={trafficPeriod === 'month' ? 'default' : 'outline'}
+                            variant={trafficPeriod === 'month' ? 'primary' : 'outline'}
                             size="sm"
                             onClick={() => setTrafficPeriod('month')}
                           >
@@ -320,6 +533,37 @@ export default function MonitoringPage() {
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
+                      
+                      {/* Sankey Chart */}
+                      {engagementData.sankey && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-lg font-semibold mb-4">Page Flow (Sankey Diagram)</h3>
+                          <div className="overflow-x-auto">
+                            <SankeyChart data={engagementData.sankey} />
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Page Visits Count - Horizontal Bar Chart */}
+                      {engagementData.page_visits_count && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-lg font-semibold mb-4">Page Visits Count</h3>
+                          <ResponsiveContainer width="100%" height={400}>
+                            <BarChart 
+                              data={engagementData.page_visits_count.slice(0, 15)}
+                              layout="vertical"
+                            >
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" />
+                              <YAxis dataKey="page" type="category" width={150} />
+                              <Tooltip />
+                              <Legend />
+                              <Bar dataKey="count" fill="#8884d8" name="Visits" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                      
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white p-6 rounded-lg shadow">
                           <h3 className="text-lg font-semibold mb-4">Top Exit Pages</h3>
@@ -358,16 +602,19 @@ export default function MonitoringPage() {
                           <ResponsiveContainer width="100%" height={300}>
                             <PieChart>
                               <Pie
-                                data={acquisitionData.channels}
+                                data={acquisitionData.channels?.map((entry: any) => ({
+                                  name: entry.channel || entry.name || 'Unknown',
+                                  value: entry.count || entry.value || 0,
+                                }))}
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
                                 label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                                 outerRadius={80}
                                 fill="#8884d8"
-                                dataKey="count"
+                                dataKey="value"
                               >
-                                {acquisitionData.channels.map((entry: any, index: number) => (
+                                {acquisitionData.channels?.map((entry: any, index: number) => (
                                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                               </Pie>
@@ -380,16 +627,19 @@ export default function MonitoringPage() {
                           <ResponsiveContainer width="100%" height={300}>
                             <PieChart>
                               <Pie
-                                data={acquisitionData.devices}
+                                data={acquisitionData.devices?.map((entry: any) => ({
+                                  name: entry.device || entry.name || 'Unknown',
+                                  value: entry.count || entry.value || 0,
+                                }))}
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
                                 label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                                 outerRadius={80}
                                 fill="#8884d8"
-                                dataKey="count"
+                                dataKey="value"
                               >
-                                {acquisitionData.devices.map((entry: any, index: number) => (
+                                {acquisitionData.devices?.map((entry: any, index: number) => (
                                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                 ))}
                               </Pie>

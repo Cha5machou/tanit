@@ -48,7 +48,8 @@ services:
       # Mount source code for hot reload
       - ./frontend:/app
       - /app/node_modules
-      - /app/.next
+      # Don't mount .next as volume to avoid permission issues
+      # - /app/.next
     command: npm run dev
     depends_on:
       backend:

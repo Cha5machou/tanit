@@ -4,8 +4,8 @@ const nextConfig = {
   images: {
     domains: ['storage.googleapis.com', 'firebasestorage.googleapis.com'],
   },
-  // Standalone output for Cloud Run deployment
-  output: 'standalone',
+  // Standalone output for Cloud Run deployment (only for production)
+  // output: 'standalone',
 }
 
 module.exports = nextConfig

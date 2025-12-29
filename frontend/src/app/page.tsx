@@ -33,35 +33,35 @@ export default function Home() {
 
   return (
     <AuthGuard requireAuth={true}>
-      <main className="flex min-h-screen flex-col items-center justify-center p-24">
-        <h1 className="text-4xl font-bold text-blue-600">
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 md:p-16 lg:p-24">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-blue-600">
           City Platform
         </h1>
-        <p className="mt-4 text-lg text-gray-600">
+        <p className="mt-4 text-base sm:text-lg text-gray-600 text-center px-4">
           Découvrez votre ville autrement
         </p>
         
         {isAuthenticated && user && hasProfile && (
-          <div className="mt-8 space-y-4 text-center">
+          <div className="mt-8 space-y-4 text-center w-full max-w-md px-4">
             <p className="text-gray-700">
               Bienvenue, {user.name || user.email}!
             </p>
             <p className="text-sm text-gray-500">
               Rôle: {user.role}
             </p>
-            <div className="flex gap-4 justify-center">
-              <Button onClick={() => router.push('/map')}>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-stretch w-full max-w-2xl">
+              <Button onClick={() => router.push('/map')} className="w-full sm:w-48 sm:min-w-[192px] sm:max-w-[192px]">
                 Voir la carte
               </Button>
-              <Button onClick={() => router.push('/ai')} variant="outline">
+              <Button onClick={() => router.push('/ai')} variant="outline" className="w-full sm:w-48 sm:min-w-[192px] sm:max-w-[192px]">
                 Assistant IA
               </Button>
               {user.role === 'admin' && (
-                <Button onClick={() => router.push('/admin')} variant="outline">
+                <Button onClick={() => router.push('/admin')} variant="outline" className="w-full sm:w-48 sm:min-w-[192px] sm:max-w-[192px]">
                   Administration
                 </Button>
               )}
-              <Button onClick={signOut} variant="secondary">
+              <Button onClick={signOut} variant="secondary" className="w-full sm:w-48 sm:min-w-[192px] sm:max-w-[192px]">
                 Déconnexion
               </Button>
             </div>

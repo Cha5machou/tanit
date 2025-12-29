@@ -1,7 +1,7 @@
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from app.core.logging import logger
 from app.core.config import settings
 import firebase_admin
@@ -389,23 +389,46 @@ class FirestoreService:
             data = doc.to_dict()
             start_time = data.get("start_time")
             
+            # Convert start_time to datetime, ensuring it's timezone-aware (UTC)
             if isinstance(start_time, str):
                 try:
                     start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    # Ensure it's timezone-aware
+                    if start_time.tzinfo is None:
+                        start_time = start_time.replace(tzinfo=timezone.utc)
                 except:
-                    start_time = datetime.utcnow()
+                    start_time = datetime.now(timezone.utc)
             elif hasattr(start_time, 'timestamp'):
-                start_time = datetime.fromtimestamp(start_time.timestamp())
-            elif not isinstance(start_time, datetime):
-                start_time = datetime.utcnow()
+                # Firestore Timestamp object
+                start_time = datetime.fromtimestamp(start_time.timestamp(), tz=timezone.utc)
+            elif isinstance(start_time, datetime):
+                # Already a datetime object
+                if start_time.tzinfo is None:
+                    # Make it timezone-aware (UTC)
+                    start_time = start_time.replace(tzinfo=timezone.utc)
+            else:
+                start_time = datetime.now(timezone.utc)
+            
+            # Ensure end_time is also timezone-aware (UTC)
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
             
             duration_seconds = (end_time - start_time).total_seconds()
             
-            doc_ref.update({
+            # Ensure duration is positive
+            if duration_seconds < 0:
+                logger.warning(f"Negative duration calculated for visit {visit_id}, using 0")
+                duration_seconds = 0
+            
+            update_data = {
                 "end_time": end_time,
                 "duration_seconds": duration_seconds,
-            })
-            logger.info(f"Updated page visit {visit_id} end_time (duration: {duration_seconds}s)")
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            
+            logger.info(f"Updating page visit {visit_id} with end_time={end_time.isoformat()}, duration_seconds={duration_seconds}")
+            doc_ref.update(update_data)
+            logger.info(f"Successfully updated page visit {visit_id} end_time (duration: {duration_seconds}s)")
         except Exception as e:
             logger.error(f"Error updating page visit end_time: {e}")
             raise
@@ -490,45 +513,8 @@ class FirestoreService:
             logger.error(f"Error getting page visits: {e}")
             return []
     
-    @staticmethod
-    def log_analytics_event(
-        event_type: str,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Log an analytics event (page_view, login, session_start, etc.)
-        
-        Args:
-            event_type: Type of event ('page_view', 'login', 'session_start', 'session_end')
-            user_id: User ID (optional for anonymous events)
-            session_id: Session ID (optional)
-            metadata: Event-specific metadata
-        
-        Returns:
-            Event ID
-        """
-        try:
-            db = get_db()
-            event_id = str(uuid.uuid4())
-            event_data = {
-                "event_type": event_type,
-                "user_id": user_id,
-                "session_id": session_id,
-                "timestamp": firestore.SERVER_TIMESTAMP,
-                "created_at": datetime.utcnow(),
-            }
-            if metadata:
-                event_data.update(metadata)
-            
-            doc_ref = db.collection("analytics_events").document(event_id)
-            doc_ref.set(event_data)
-            logger.debug(f"Logged analytics event: {event_type} for user {user_id}")
-            return event_id
-        except Exception as e:
-            logger.error(f"Error logging analytics event: {e}")
-            raise
+    # Removed log_analytics_event - now using page_visits collection only
+    # Analytics events are logged as special page visits with event_type in metadata
     
     @staticmethod
     def log_ai_event(
@@ -570,62 +556,8 @@ class FirestoreService:
             logger.error(f"Error logging AI event: {e}")
             raise
     
-    @staticmethod
-    def get_analytics_events(
-        event_type: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Get analytics events with optional filters
-        """
-        try:
-            db = get_db()
-            events_ref = db.collection("analytics_events")
-            query = events_ref
-            
-            if event_type:
-                query = query.where(filter=FieldFilter("event_type", "==", event_type))
-            if user_id:
-                query = query.where(filter=FieldFilter("user_id", "==", user_id))
-            if session_id:
-                query = query.where(filter=FieldFilter("session_id", "==", session_id))
-            if start_time:
-                query = query.where(filter=FieldFilter("created_at", ">=", start_time))
-            if end_time:
-                query = query.where(filter=FieldFilter("created_at", "<=", end_time))
-            
-            docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).stream()
-            
-            events = []
-            for doc in docs:
-                data = doc.to_dict()
-                created_at = data.get("created_at")
-                if hasattr(created_at, 'timestamp'):
-                    created_at = datetime.fromtimestamp(created_at.timestamp())
-                elif isinstance(created_at, str):
-                    try:
-                        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                    except:
-                        created_at = datetime.utcnow()
-                elif not isinstance(created_at, datetime):
-                    created_at = datetime.utcnow()
-                
-                events.append({
-                    "event_id": doc.id,
-                    "event_type": data.get("event_type"),
-                    "user_id": data.get("user_id"),
-                    "session_id": data.get("session_id"),
-                    "created_at": created_at,
-                    **{k: v for k, v in data.items() if k not in ["event_type", "user_id", "session_id", "created_at", "timestamp"]}
-                })
-            
-            return events
-        except Exception as e:
-            logger.error(f"Error getting analytics events: {e}")
-            return []
+    # Removed get_analytics_events - now using page_visits collection only
+    # To get analytics events, query page_visits with event_type filter in metadata
     
     @staticmethod
     def get_ai_events(
@@ -683,4 +615,142 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error getting AI events: {e}")
             return []
+    
+    @staticmethod
+    def close_inactive_page_visits(inactivity_minutes: int = 30) -> int:
+        """
+        Close page visits that have end_time == None
+        Sets end_time = start_time + 30 minutes
+        
+        Args:
+            inactivity_minutes: Minutes to add to start_time for end_time (default: 30)
+        
+        Returns:
+            Number of visits closed
+        """
+        try:
+            db = get_db()
+            
+            # Get all page visits without end_time
+            visits_ref = db.collection("page_visits")
+            query = visits_ref.where(filter=FieldFilter("end_time", "==", None))
+            
+            docs = query.stream()
+            
+            closed_count = 0
+            for doc in docs:
+                data = doc.to_dict()
+                start_time = data.get("start_time")
+                
+                if not start_time:
+                    continue
+                
+                # Convert start_time to datetime, ensuring it's timezone-aware
+                if isinstance(start_time, str):
+                    try:
+                        start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        if start_time.tzinfo is None:
+                            start_time = start_time.replace(tzinfo=timezone.utc)
+                    except:
+                        continue
+                elif hasattr(start_time, 'timestamp'):
+                    start_time = datetime.fromtimestamp(start_time.timestamp(), tz=timezone.utc)
+                elif isinstance(start_time, datetime):
+                    if start_time.tzinfo is None:
+                        start_time = start_time.replace(tzinfo=timezone.utc)
+                else:
+                    continue
+                
+                # Set end_time = start_time + inactivity_minutes
+                end_time = start_time + timedelta(minutes=inactivity_minutes)
+                duration_seconds = (end_time - start_time).total_seconds()
+                
+                doc_ref = db.collection("page_visits").document(doc.id)
+                doc_ref.update({
+                    "end_time": end_time,
+                    "duration_seconds": duration_seconds,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                })
+                closed_count += 1
+                logger.info(f"Closed page visit {doc.id} (end_time = start_time + {inactivity_minutes} minutes)")
+            
+            return closed_count
+        except Exception as e:
+            logger.error(f"Error closing inactive page visits: {e}")
+            raise
+    
+    @staticmethod
+    def create_poi(poi_data: Dict[str, Any]) -> str:
+        """Create a new POI"""
+        try:
+            db = get_db()
+            poi_data["created_at"] = firestore.SERVER_TIMESTAMP
+            poi_data["updated_at"] = firestore.SERVER_TIMESTAMP
+            
+            doc_ref = db.collection("poi").document()
+            doc_ref.set(poi_data)
+            return doc_ref.id
+        except Exception as e:
+            logger.error(f"Error creating POI: {e}")
+            raise
+    
+    @staticmethod
+    def get_poi(poi_id: str) -> Optional[Dict[str, Any]]:
+        """Get a POI by ID"""
+        try:
+            db = get_db()
+            doc_ref = db.collection("poi").document(poi_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                data = doc.to_dict()
+                data["poi_id"] = doc.id
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error getting POI {poi_id}: {e}")
+            return None
+    
+    @staticmethod
+    def list_pois() -> List[Dict[str, Any]]:
+        """List all POIs"""
+        try:
+            db = get_db()
+            pois_ref = db.collection("poi")
+            docs = pois_ref.stream()
+            
+            pois = []
+            for doc in docs:
+                data = doc.to_dict()
+                data["poi_id"] = doc.id
+                pois.append(data)
+            
+            return pois
+        except Exception as e:
+            logger.error(f"Error listing POIs: {e}")
+            return []
+    
+    @staticmethod
+    def update_poi(poi_id: str, updates: Dict[str, Any]) -> bool:
+        """Update a POI"""
+        try:
+            db = get_db()
+            updates["updated_at"] = firestore.SERVER_TIMESTAMP
+            doc_ref = db.collection("poi").document(poi_id)
+            doc_ref.update(updates)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating POI {poi_id}: {e}")
+            return False
+    
+    @staticmethod
+    def delete_poi(poi_id: str) -> bool:
+        """Delete a POI"""
+        try:
+            db = get_db()
+            doc_ref = db.collection("poi").document(poi_id)
+            doc_ref.delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting POI {poi_id}: {e}")
+            return False
 

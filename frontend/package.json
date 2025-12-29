@@ -12,6 +12,7 @@
   "dependencies": {
     "@headlessui/react": "^1.7.18",
     "@heroicons/react": "^2.1.1",
+    "@types/react-simple-maps": "^3.0.6",
     "clsx": "^2.1.0",
     "firebase": "^10.8.0",
     "leaflet": "^1.9.4",
@@ -19,6 +20,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-leaflet": "^4.2.1",
+    "react-simple-maps": "^3.0.0",
     "recharts": "^2.15.4",
     "tailwind-merge": "^2.2.1",
     "zustand": "^4.5.0"

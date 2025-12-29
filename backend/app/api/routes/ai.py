@@ -301,10 +301,10 @@ async def query_agent(
             output_tokens = result.get("tokens_used", 0) - input_tokens
             
             # Calculate cost (approximate - adjust based on actual model pricing)
-            # OpenAI GPT-4o-mini: $0.15/$0.60 per 1M tokens
-            # Gemini 2.0 Flash: $0.075/$0.30 per 1M tokens
-            cost_per_1k_input = 0.00015 if llm_provider == "openai" else 0.000075
-            cost_per_1k_output = 0.0006 if llm_provider == "openai" else 0.0003
+            # OpenAI GPT-4o-mini: $0.15/$0.60 per 1M tokens = $0.00015/$0.0006 per 1K tokens
+            # Gemini 2.0 Flash: $0.3/$2.50 per 1M tokens = $0.0003/$0.0025 per 1K tokens
+            cost_per_1k_input = 0.00015 if llm_provider == "openai" else 0.0003
+            cost_per_1k_output = 0.0006 if llm_provider == "openai" else 0.0025
             cost_usd = (input_tokens * cost_per_1k_input / 1000) + (output_tokens * cost_per_1k_output / 1000)
             
             model_name = llm_model or (f"gpt-4o-mini" if llm_provider == "openai" else "gemini-2.0-flash-exp")

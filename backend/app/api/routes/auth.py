@@ -56,14 +56,17 @@ async def get_current_user_info(
             # Generate session_id
             session_id = f"{uid}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
             
-            # Log analytics event for session_start
-            FirestoreService.log_analytics_event(
-                event_type="session_start",
+            # Log session_start as a page visit to the root page
+            # This way we only use page_visits, not analytics_events
+            FirestoreService.log_page_visit(
                 user_id=uid,
-                session_id=session_id,
+                page_path="/",
+                start_time=datetime.utcnow(),
                 metadata={
                     "user_agent": user_agent,
                     "ip_address": client_ip,
+                    "session_id": session_id,
+                    "event_type": "session_start",  # Mark as session start
                 }
             )
         except Exception as e:
@@ -252,29 +255,8 @@ async def log_page_visit(
             metadata=metadata
         )
         
-        # Also log analytics event for page_view
-        try:
-            # Generate or get session_id from metadata
-            session_id = metadata.get("session_id")
-            if not session_id:
-                # Create session_id based on user and date
-                session_id = f"{user_id}_{datetime.utcnow().strftime('%Y%m%d')}"
-            
-            FirestoreService.log_analytics_event(
-                event_type="page_view",
-                user_id=user_id,
-                session_id=session_id,
-                metadata={
-                    "page": request.page_path,
-                    "referrer": metadata.get("referrer"),
-                    "user_agent": metadata.get("user_agent"),
-                    "device_type": metadata.get("device_type"),
-                    "previous_page": metadata.get("previous_page"),
-                }
-            )
-        except Exception as e:
-            import logging
-            logging.warning(f"Failed to log analytics event: {e}")
+        # page_view is already logged via log_page_visit above
+        # No need for separate analytics_events collection
         
         return {"visit_id": visit_id, "message": "Page visit logged successfully"}
     except Exception as e:
@@ -317,12 +299,42 @@ async def log_analytics_event(
             **request.metadata
         }
         
-        FirestoreService.log_analytics_event(
-            event_type=request.event_type,
-            user_id=user_id,
-            session_id=session_id,
-            metadata=metadata
-        )
+        # Use page_visits instead of analytics_events
+        # For session_end, we log it as a special page visit
+        if request.event_type == "session_end":
+            # Get device type from user agent
+            import re
+            user_agent_lower = user_agent.lower()
+            device_type = "unknown"
+            
+            # Check for tablet
+            if any(x in user_agent_lower for x in ["tablet", "ipad", "playbook", "silk"]):
+                device_type = "tablet"
+            # Check for mobile
+            elif any(x in user_agent_lower for x in ["mobile", "iphone", "ipod", "android", "blackberry", "opera", "mini", "windows ce", "palm", "smartphone", "iemobile"]):
+                device_type = "mobile"
+            else:
+                device_type = "desktop"
+            
+            # Add device_type to metadata
+            metadata["device_type"] = device_type
+            
+            FirestoreService.log_page_visit(
+                user_id=user_id,
+                page_path="/_session_end",  # Special path to mark session end
+                start_time=datetime.utcnow(),
+                metadata=metadata
+            )
+        elif request.event_type == "session_start":
+            # Already handled in /me endpoint
+            pass
+        elif request.event_type == "login":
+            FirestoreService.log_page_visit(
+                user_id=user_id,
+                page_path="/_login",  # Special path to mark login
+                start_time=datetime.utcnow(),
+                metadata=metadata
+            )
         
         return {"message": "Analytics event logged successfully"}
     except Exception as e:
@@ -345,18 +357,31 @@ async def end_page_visit(
     try:
         from datetime import datetime
         
-        # Parse end_time from ISO format string
+        # Parse end_time from ISO format string and ensure it's timezone-aware
+        from datetime import timezone
         try:
             end_time = datetime.fromisoformat(request.end_time.replace('Z', '+00:00'))
+            # Ensure it's timezone-aware
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
         except:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
+        
+        import logging
+        logging.info(f"Updating page visit {request.visit_id} with end_time {end_time.isoformat()}")
         
         FirestoreService.update_page_visit_end_time(
             visit_id=request.visit_id,
             end_time=end_time
         )
         
-        return {"message": "Page visit end time updated successfully"}
+        logging.info(f"Successfully updated page visit {request.visit_id}")
+        
+        return {
+            "message": "Page visit end time updated successfully",
+            "visit_id": request.visit_id,
+            "end_time": end_time.isoformat()
+        }
     except Exception as e:
         import logging
         logging.error(f"Error updating page visit end time: {e}")

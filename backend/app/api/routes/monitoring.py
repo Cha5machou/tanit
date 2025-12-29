@@ -15,7 +15,7 @@ async def close_inactive_visits(
 ):
     """
     Close page visits that have been inactive for a specified period (Admin only)
-    This endpoint should be called periodically (e.g., via cron job) to clean up inactive visits
+    Uses the last event (page visit) time per user to determine inactivity
     """
     try:
         closed_count = FirestoreService.close_inactive_page_visits(inactivity_minutes=inactivity_minutes)
