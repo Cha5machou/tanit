@@ -1,17 +1,38 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from app.core.security import get_current_user
 from app.api.deps import get_admin_user
 from app.services.firestore import FirestoreService
 from app.schemas.user import UserResponse, ProfileCreate, ProfileResponse, UserRoleUpdate
 from typing import Dict, Any, List
+from pydantic import BaseModel
 
 router = APIRouter()
 
 
+class PageVisitRequest(BaseModel):
+    page_path: str
+    start_time: str  # ISO format datetime string
+    metadata: Dict[str, Any] = {}
+
+
+class PageVisitEndRequest(BaseModel):
+    visit_id: str
+    end_time: str  # ISO format datetime string
+
+
+class AnalyticsEventRequest(BaseModel):
+    event_type: str  # 'page_view', 'session_start', 'session_end', 'login'
+    metadata: Dict[str, Any] = {}
+
+
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user: Dict[str, Any] = Depends(get_current_user)):
+async def get_current_user_info(
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     """
     Get current authenticated user information
+    Also logs a connection event
     """
     uid = current_user["uid"]
     
@@ -25,6 +46,30 @@ async def get_current_user_info(current_user: Dict[str, Any] = Depends(get_curre
             email=current_user.get("email"),
             role="user"
         )
+    
+        # Log connection event
+        try:
+            # Get user agent and IP from request headers
+            user_agent = request.headers.get("user-agent", "unknown")
+            client_ip = request.client.host if request.client else "unknown"
+            
+            # Generate session_id
+            session_id = f"{uid}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+            
+            # Log analytics event for session_start
+            FirestoreService.log_analytics_event(
+                event_type="session_start",
+                user_id=uid,
+                session_id=session_id,
+                metadata={
+                    "user_agent": user_agent,
+                    "ip_address": client_ip,
+                }
+            )
+        except Exception as e:
+            # Don't fail the request if logging fails
+            import logging
+            logging.warning(f"Failed to log connection/analytics event: {e}")
     
     return UserResponse(
         uid=uid,
@@ -164,5 +209,159 @@ async def list_users(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error listing users: {str(e)}"
+        )
+
+
+@router.post("/page-visit")
+async def log_page_visit(
+    request: PageVisitRequest,
+    http_request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Log a page visit with start time
+    """
+    try:
+        from datetime import datetime
+        
+        user_id = current_user["uid"]
+        
+        # Parse start_time from ISO format string
+        try:
+            start_time = datetime.fromisoformat(request.start_time.replace('Z', '+00:00'))
+        except:
+            start_time = datetime.utcnow()
+        
+        # Get user agent and IP from request headers
+        user_agent = http_request.headers.get("user-agent", "unknown")
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        referrer = http_request.headers.get("referer", "unknown")
+        
+        # Merge request metadata with automatic metadata
+        metadata = {
+            "user_agent": user_agent,
+            "ip_address": client_ip,
+            "referrer": referrer,
+            **request.metadata
+        }
+        
+        visit_id = FirestoreService.log_page_visit(
+            user_id=user_id,
+            page_path=request.page_path,
+            start_time=start_time,
+            metadata=metadata
+        )
+        
+        # Also log analytics event for page_view
+        try:
+            # Generate or get session_id from metadata
+            session_id = metadata.get("session_id")
+            if not session_id:
+                # Create session_id based on user and date
+                session_id = f"{user_id}_{datetime.utcnow().strftime('%Y%m%d')}"
+            
+            FirestoreService.log_analytics_event(
+                event_type="page_view",
+                user_id=user_id,
+                session_id=session_id,
+                metadata={
+                    "page": request.page_path,
+                    "referrer": metadata.get("referrer"),
+                    "user_agent": metadata.get("user_agent"),
+                    "device_type": metadata.get("device_type"),
+                    "previous_page": metadata.get("previous_page"),
+                }
+            )
+        except Exception as e:
+            import logging
+            logging.warning(f"Failed to log analytics event: {e}")
+        
+        return {"visit_id": visit_id, "message": "Page visit logged successfully"}
+    except Exception as e:
+        import logging
+        logging.error(f"Error logging page visit: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error logging page visit: {str(e)}"
+        )
+
+
+@router.post("/analytics-event")
+async def log_analytics_event(
+    request: AnalyticsEventRequest,
+    http_request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Log an analytics event (page_view, session_start, session_end, login)
+    """
+    try:
+        from datetime import datetime
+        
+        user_id = current_user["uid"]
+        
+        # Get session_id from metadata or generate one
+        session_id = request.metadata.get("session_id")
+        if not session_id:
+            # Try to get from sessionStorage equivalent (we'll pass it from frontend)
+            session_id = request.metadata.get("session_id")
+        
+        # Get user agent and IP from request headers
+        user_agent = http_request.headers.get("user-agent", "unknown")
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        
+        # Merge request metadata with automatic metadata
+        metadata = {
+            "user_agent": user_agent,
+            "ip_address": client_ip,
+            **request.metadata
+        }
+        
+        FirestoreService.log_analytics_event(
+            event_type=request.event_type,
+            user_id=user_id,
+            session_id=session_id,
+            metadata=metadata
+        )
+        
+        return {"message": "Analytics event logged successfully"}
+    except Exception as e:
+        import logging
+        logging.error(f"Error logging analytics event: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error logging analytics event: {str(e)}"
+        )
+
+
+@router.post("/page-visit/end")
+async def end_page_visit(
+    request: PageVisitEndRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Update a page visit with end time (when user leaves the page)
+    """
+    try:
+        from datetime import datetime
+        
+        # Parse end_time from ISO format string
+        try:
+            end_time = datetime.fromisoformat(request.end_time.replace('Z', '+00:00'))
+        except:
+            end_time = datetime.utcnow()
+        
+        FirestoreService.update_page_visit_end_time(
+            visit_id=request.visit_id,
+            end_time=end_time
+        )
+        
+        return {"message": "Page visit end time updated successfully"}
+    except Exception as e:
+        import logging
+        logging.error(f"Error updating page visit end time: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating page visit end time: {str(e)}"
         )
 

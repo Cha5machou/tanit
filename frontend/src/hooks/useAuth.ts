@@ -41,6 +41,31 @@ export function useAuth() {
 
   const signOut = async () => {
     try {
+      // Get session_id from sessionStorage before clearing it
+      let sessionId = null
+      try {
+        sessionId = sessionStorage.getItem('session_id')
+      } catch (e) {
+        // Silently fail if sessionStorage is not available
+      }
+      
+      // Log session_end before signing out
+      try {
+        if (sessionId) {
+          await api.logAnalyticsEvent('session_end', { session_id: sessionId })
+        }
+      } catch (err) {
+        // Don't fail sign out if tracking fails
+        console.warn('Failed to log session end event:', err)
+      }
+      
+      // Clear session_id from sessionStorage
+      try {
+        sessionStorage.removeItem('session_id')
+      } catch (e) {
+        // Silently fail
+      }
+      
       await firebaseSignOut()
       setUser(null)
       setFirebaseUser(null)

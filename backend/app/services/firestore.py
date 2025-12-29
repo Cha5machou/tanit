@@ -318,4 +318,369 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error getting agent config: {e}")
             return None
+    
+    @staticmethod
+    def log_page_visit(
+        user_id: str,
+        page_path: str,
+        start_time: datetime,
+        end_time: Optional[datetime] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Log a page visit with start and end times
+        
+        Args:
+            user_id: User ID
+            page_path: Path of the page visited (e.g., '/ai', '/admin/monitoring')
+            start_time: When the user started viewing the page
+            end_time: When the user left the page (None if still on page)
+            metadata: Optional metadata (e.g., referrer, user_agent, etc.)
+        
+        Returns:
+            Visit ID
+        """
+        try:
+            db = get_db()
+            visit_id = str(uuid.uuid4())
+            
+            # Calculate duration if end_time is provided
+            duration_seconds = None
+            if end_time:
+                duration_seconds = (end_time - start_time).total_seconds()
+            
+            visit_data = {
+                "user_id": user_id,
+                "page_path": page_path,
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration_seconds": duration_seconds,
+                "created_at": datetime.utcnow(),
+            }
+            if metadata:
+                visit_data.update(metadata)
+            
+            doc_ref = db.collection("page_visits").document(visit_id)
+            doc_ref.set(visit_data)
+            logger.info(f"Logged page visit: {page_path} for user {user_id} (duration: {duration_seconds}s)")
+            return visit_id
+        except Exception as e:
+            logger.error(f"Error logging page visit: {e}")
+            raise
+    
+    @staticmethod
+    def update_page_visit_end_time(visit_id: str, end_time: datetime):
+        """
+        Update the end_time of a page visit (when user leaves the page)
+        
+        Args:
+            visit_id: Visit ID returned from log_page_visit
+            end_time: When the user left the page
+        """
+        try:
+            db = get_db()
+            doc_ref = db.collection("page_visits").document(visit_id)
+            doc = doc_ref.get()
+            
+            if not doc.exists:
+                logger.warning(f"Page visit {visit_id} not found for update")
+                return
+            
+            data = doc.to_dict()
+            start_time = data.get("start_time")
+            
+            if isinstance(start_time, str):
+                try:
+                    start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                except:
+                    start_time = datetime.utcnow()
+            elif hasattr(start_time, 'timestamp'):
+                start_time = datetime.fromtimestamp(start_time.timestamp())
+            elif not isinstance(start_time, datetime):
+                start_time = datetime.utcnow()
+            
+            duration_seconds = (end_time - start_time).total_seconds()
+            
+            doc_ref.update({
+                "end_time": end_time,
+                "duration_seconds": duration_seconds,
+            })
+            logger.info(f"Updated page visit {visit_id} end_time (duration: {duration_seconds}s)")
+        except Exception as e:
+            logger.error(f"Error updating page visit end_time: {e}")
+            raise
+    
+    @staticmethod
+    def get_page_visits(
+        user_id: Optional[str] = None,
+        page_path: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get page visits with optional filters
+        
+        Args:
+            user_id: Filter by user ID
+            page_path: Filter by page path
+            start_time: Filter visits that started after this time
+            end_time: Filter visits that started before this time
+        
+        Returns:
+            List of page visits
+        """
+        try:
+            db = get_db()
+            visits_ref = db.collection("page_visits")
+            query = visits_ref
+            
+            # Apply filters
+            if user_id:
+                query = query.where(filter=FieldFilter("user_id", "==", user_id))
+            if page_path:
+                query = query.where(filter=FieldFilter("page_path", "==", page_path))
+            if start_time:
+                query = query.where(filter=FieldFilter("start_time", ">=", start_time))
+            if end_time:
+                query = query.where(filter=FieldFilter("start_time", "<=", end_time))
+            
+            # Order by start_time descending
+            docs = query.order_by("start_time", direction=firestore.Query.DESCENDING).stream()
+            
+            visits = []
+            for doc in docs:
+                data = doc.to_dict()
+                # Convert Firestore timestamps to datetime if needed
+                start_time_visit = data.get("start_time")
+                end_time_visit = data.get("end_time")
+                
+                if hasattr(start_time_visit, 'timestamp'):
+                    start_time_visit = datetime.fromtimestamp(start_time_visit.timestamp())
+                elif isinstance(start_time_visit, str):
+                    try:
+                        start_time_visit = datetime.fromisoformat(start_time_visit.replace('Z', '+00:00'))
+                    except:
+                        start_time_visit = datetime.utcnow()
+                elif not isinstance(start_time_visit, datetime):
+                    start_time_visit = datetime.utcnow()
+                
+                if end_time_visit:
+                    if hasattr(end_time_visit, 'timestamp'):
+                        end_time_visit = datetime.fromtimestamp(end_time_visit.timestamp())
+                    elif isinstance(end_time_visit, str):
+                        try:
+                            end_time_visit = datetime.fromisoformat(end_time_visit.replace('Z', '+00:00'))
+                        except:
+                            end_time_visit = None
+                    elif not isinstance(end_time_visit, datetime):
+                        end_time_visit = None
+                
+                visits.append({
+                    "visit_id": doc.id,
+                    "user_id": data.get("user_id"),
+                    "page_path": data.get("page_path"),
+                    "start_time": start_time_visit,
+                    "end_time": end_time_visit,
+                    "duration_seconds": data.get("duration_seconds"),
+                    **{k: v for k, v in data.items() if k not in ["user_id", "page_path", "start_time", "end_time", "duration_seconds"]}
+                })
+            
+            return visits
+        except Exception as e:
+            logger.error(f"Error getting page visits: {e}")
+            return []
+    
+    @staticmethod
+    def log_analytics_event(
+        event_type: str,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Log an analytics event (page_view, login, session_start, etc.)
+        
+        Args:
+            event_type: Type of event ('page_view', 'login', 'session_start', 'session_end')
+            user_id: User ID (optional for anonymous events)
+            session_id: Session ID (optional)
+            metadata: Event-specific metadata
+        
+        Returns:
+            Event ID
+        """
+        try:
+            db = get_db()
+            event_id = str(uuid.uuid4())
+            event_data = {
+                "event_type": event_type,
+                "user_id": user_id,
+                "session_id": session_id,
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "created_at": datetime.utcnow(),
+            }
+            if metadata:
+                event_data.update(metadata)
+            
+            doc_ref = db.collection("analytics_events").document(event_id)
+            doc_ref.set(event_data)
+            logger.debug(f"Logged analytics event: {event_type} for user {user_id}")
+            return event_id
+        except Exception as e:
+            logger.error(f"Error logging analytics event: {e}")
+            raise
+    
+    @staticmethod
+    def log_ai_event(
+        event_type: str,
+        user_id: str,
+        conversation_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Log an AI-related event (ai_request, embedding_request)
+        
+        Args:
+            event_type: Type of event ('ai_request', 'embedding_request')
+            user_id: User ID
+            conversation_id: Conversation ID (for ai_request)
+            metadata: Event-specific metadata (model, tokens, cost, latency, etc.)
+        
+        Returns:
+            Event ID
+        """
+        try:
+            db = get_db()
+            event_id = str(uuid.uuid4())
+            event_data = {
+                "event_type": event_type,
+                "user_id": user_id,
+                "conversation_id": conversation_id,
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "created_at": datetime.utcnow(),
+            }
+            if metadata:
+                event_data.update(metadata)
+            
+            doc_ref = db.collection("ai_events").document(event_id)
+            doc_ref.set(event_data)
+            logger.debug(f"Logged AI event: {event_type} for user {user_id}")
+            return event_id
+        except Exception as e:
+            logger.error(f"Error logging AI event: {e}")
+            raise
+    
+    @staticmethod
+    def get_analytics_events(
+        event_type: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get analytics events with optional filters
+        """
+        try:
+            db = get_db()
+            events_ref = db.collection("analytics_events")
+            query = events_ref
+            
+            if event_type:
+                query = query.where(filter=FieldFilter("event_type", "==", event_type))
+            if user_id:
+                query = query.where(filter=FieldFilter("user_id", "==", user_id))
+            if session_id:
+                query = query.where(filter=FieldFilter("session_id", "==", session_id))
+            if start_time:
+                query = query.where(filter=FieldFilter("created_at", ">=", start_time))
+            if end_time:
+                query = query.where(filter=FieldFilter("created_at", "<=", end_time))
+            
+            docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+            
+            events = []
+            for doc in docs:
+                data = doc.to_dict()
+                created_at = data.get("created_at")
+                if hasattr(created_at, 'timestamp'):
+                    created_at = datetime.fromtimestamp(created_at.timestamp())
+                elif isinstance(created_at, str):
+                    try:
+                        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    except:
+                        created_at = datetime.utcnow()
+                elif not isinstance(created_at, datetime):
+                    created_at = datetime.utcnow()
+                
+                events.append({
+                    "event_id": doc.id,
+                    "event_type": data.get("event_type"),
+                    "user_id": data.get("user_id"),
+                    "session_id": data.get("session_id"),
+                    "created_at": created_at,
+                    **{k: v for k, v in data.items() if k not in ["event_type", "user_id", "session_id", "created_at", "timestamp"]}
+                })
+            
+            return events
+        except Exception as e:
+            logger.error(f"Error getting analytics events: {e}")
+            return []
+    
+    @staticmethod
+    def get_ai_events(
+        event_type: Optional[str] = None,
+        user_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get AI events with optional filters
+        """
+        try:
+            db = get_db()
+            events_ref = db.collection("ai_events")
+            query = events_ref
+            
+            if event_type:
+                query = query.where(filter=FieldFilter("event_type", "==", event_type))
+            if user_id:
+                query = query.where(filter=FieldFilter("user_id", "==", user_id))
+            if conversation_id:
+                query = query.where(filter=FieldFilter("conversation_id", "==", conversation_id))
+            if start_time:
+                query = query.where(filter=FieldFilter("created_at", ">=", start_time))
+            if end_time:
+                query = query.where(filter=FieldFilter("created_at", "<=", end_time))
+            
+            docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+            
+            events = []
+            for doc in docs:
+                data = doc.to_dict()
+                created_at = data.get("created_at")
+                if hasattr(created_at, 'timestamp'):
+                    created_at = datetime.fromtimestamp(created_at.timestamp())
+                elif isinstance(created_at, str):
+                    try:
+                        created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    except:
+                        created_at = datetime.utcnow()
+                elif not isinstance(created_at, datetime):
+                    created_at = datetime.utcnow()
+                
+                events.append({
+                    "event_id": doc.id,
+                    "event_type": data.get("event_type"),
+                    "user_id": data.get("user_id"),
+                    "conversation_id": data.get("conversation_id"),
+                    "created_at": created_at,
+                    **{k: v for k, v in data.items() if k not in ["event_type", "user_id", "conversation_id", "created_at", "timestamp"]}
+                })
+            
+            return events
+        except Exception as e:
+            logger.error(f"Error getting AI events: {e}")
+            return []
 

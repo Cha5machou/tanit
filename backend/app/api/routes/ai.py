@@ -294,6 +294,38 @@ async def query_agent(
         # Save assistant message
         FirestoreService.add_message_to_conversation(conversation_id, "assistant", result["answer"])
         
+        # Log AI request event for analytics
+        try:
+            # Calculate tokens (approximate if not provided)
+            input_tokens = result.get("tokens_used", 0) // 2  # Rough estimate
+            output_tokens = result.get("tokens_used", 0) - input_tokens
+            
+            # Calculate cost (approximate - adjust based on actual model pricing)
+            # OpenAI GPT-4o-mini: $0.15/$0.60 per 1M tokens
+            # Gemini 2.0 Flash: $0.075/$0.30 per 1M tokens
+            cost_per_1k_input = 0.00015 if llm_provider == "openai" else 0.000075
+            cost_per_1k_output = 0.0006 if llm_provider == "openai" else 0.0003
+            cost_usd = (input_tokens * cost_per_1k_input / 1000) + (output_tokens * cost_per_1k_output / 1000)
+            
+            model_name = llm_model or (f"gpt-4o-mini" if llm_provider == "openai" else "gemini-2.0-flash-exp")
+            
+            FirestoreService.log_ai_event(
+                event_type="ai_request",
+                user_id=user_id,
+                conversation_id=conversation_id,
+                metadata={
+                    "model": model_name,
+                    "provider": llm_provider,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": result.get("tokens_used", 0),
+                    "latency_ms": latency_ms,
+                    "cost_usd": cost_usd,
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log AI event: {e}")
+        
         return QueryResponse(
             answer=result["answer"],
             conversation_id=conversation_id,

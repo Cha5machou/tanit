@@ -28,22 +28,37 @@ class AIAgentService:
     @staticmethod
     def _get_embeddings(provider: str = "openai", model: Optional[str] = None):
         """Get embeddings based on provider"""
-        if provider == "openai":
-            if not settings.OPENAI_API_KEY:
-                raise ValueError("OPENAI_API_KEY not configured")
-            kwargs = {"openai_api_key": settings.OPENAI_API_KEY}
-            if model:
-                kwargs["model"] = model
-            return OpenAIEmbeddings(**kwargs)
-        elif provider == "gemini":
-            if not settings.GOOGLE_API_KEY:
-                raise ValueError("GOOGLE_API_KEY not configured")
-            return GoogleGenerativeAIEmbeddings(
-                model=model or "models/embedding-001",
-                google_api_key=settings.GOOGLE_API_KEY
-            )
-        else:
-            raise ValueError(f"Unsupported embedding provider: {provider}")
+        from app.services.firestore import FirestoreService
+        import time
+        
+        start_time = time.time()
+        embeddings = None
+        
+        try:
+            if provider == "openai":
+                if not settings.OPENAI_API_KEY:
+                    raise ValueError("OPENAI_API_KEY not configured")
+                kwargs = {"openai_api_key": settings.OPENAI_API_KEY}
+                if model:
+                    kwargs["model"] = model
+                embeddings = OpenAIEmbeddings(**kwargs)
+            elif provider == "gemini":
+                if not settings.GOOGLE_API_KEY:
+                    raise ValueError("GOOGLE_API_KEY not configured")
+                embeddings = GoogleGenerativeAIEmbeddings(
+                    model=model or "models/embedding-001",
+                    google_api_key=settings.GOOGLE_API_KEY
+                )
+            else:
+                raise ValueError(f"Unsupported embedding provider: {provider}")
+            
+            # Log embedding initialization (not a request, just model selection)
+            # We'll log actual embedding requests when they happen
+            
+            return embeddings
+        except Exception as e:
+            logger.error(f"Error creating embeddings: {e}")
+            raise
     
     @staticmethod
     def _get_llm(provider: str = "openai", model: Optional[str] = None):
@@ -115,6 +130,44 @@ class AIAgentService:
         
         # Create embeddings
         embeddings = AIAgentService._get_embeddings(embedding_provider, embedding_model)
+        
+        # Log embedding request (approximate tokens)
+        try:
+            from app.services.firestore import FirestoreService
+            import time
+            
+            embedding_start = time.time()
+            total_text_length = sum(len(text) for text in texts)
+            # Rough estimate: 1 token ≈ 4 characters
+            estimated_tokens = total_text_length // 4
+            
+            # Calculate cost (approximate)
+            # OpenAI text-embedding-ada-002: $0.10 per 1M tokens
+            # Gemini embedding-001: $0.02 per 1M tokens
+            cost_per_1k = 0.0001 if embedding_provider == "openai" else 0.00002
+            cost_usd = (estimated_tokens * cost_per_1k / 1000)
+            
+            embedding_latency = (time.time() - embedding_start) * 1000
+            
+            model_name = embedding_model or (f"text-embedding-ada-002" if embedding_provider == "openai" else "models/embedding-001")
+            
+            # Note: We don't have user_id here, so we'll log without it
+            # Embedding events are system-level, not user-specific
+            FirestoreService.log_ai_event(
+                event_type="embedding_request",
+                user_id="system",  # System-level event
+                conversation_id=conversation_id,
+                metadata={
+                    "model": model_name,
+                    "provider": embedding_provider,
+                    "input_tokens": estimated_tokens,
+                    "cost_usd": cost_usd,
+                    "latency_ms": embedding_latency,
+                    "text_count": len(texts),
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log embedding event: {e}")
         
         # Create vector store using ChromaDB (persistent storage)
         # Use a unique collection name per embedding provider

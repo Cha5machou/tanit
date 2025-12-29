@@ -8,6 +8,30 @@ from google.cloud import firestore as fs
 router = APIRouter()
 
 
+@router.post("/close-inactive-visits")
+async def close_inactive_visits(
+    inactivity_minutes: int = 30,
+    current_admin: Dict[str, Any] = Depends(get_admin_user)
+):
+    """
+    Close page visits that have been inactive for a specified period (Admin only)
+    This endpoint should be called periodically (e.g., via cron job) to clean up inactive visits
+    """
+    try:
+        closed_count = FirestoreService.close_inactive_page_visits(inactivity_minutes=inactivity_minutes)
+        return {
+            "message": f"Closed {closed_count} inactive page visits",
+            "closed_count": closed_count,
+            "inactivity_minutes": inactivity_minutes,
+        }
+    except Exception as e:
+        import traceback
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error closing inactive visits: {str(e)}\n{traceback.format_exc()}"
+        )
+
+
 @router.get("/stats/users")
 async def get_user_stats(
     current_admin: Dict[str, Any] = Depends(get_admin_user)
@@ -58,11 +82,9 @@ async def get_connection_stats(
 ):
     """
     Get connection statistics by period (Admin only)
-    Uses user creation dates and conversation creation as proxy for connections
+    Uses page visits to track user activity (more detailed than connection events)
     """
     try:
-        db = get_db()
-        
         # Calculate time range
         now = datetime.utcnow()
         if period == "hour":
@@ -77,77 +99,63 @@ async def get_connection_stats(
                 detail="Period must be 'hour', 'day', or 'week'"
             )
         
-        # Get users created in the period (as proxy for new connections)
-        users_ref = db.collection("users")
-        users = users_ref.stream()
+        # Get page visits from Firestore (more detailed than connection events)
+        page_visits = FirestoreService.get_page_visits(
+            start_time=start_time,
+            end_time=now
+        )
         
         connections_by_hour = {}
         connections_by_day = {}
         unique_users = set()
+        page_views_by_page = {}
         
-        for user_doc in users:
-            data = user_doc.to_dict()
-            created_at = data.get("created_at")
+        for visit in page_visits:
+            user_id = visit.get("user_id")
+            start_time_visit = visit.get("start_time")
+            page_path = visit.get("page_path", "unknown")
             
-            if created_at:
-                # Convert Firestore Timestamp to datetime
-                if hasattr(created_at, 'timestamp'):
-                    user_time = datetime.fromtimestamp(created_at.timestamp())
-                elif isinstance(created_at, datetime):
-                    user_time = created_at
-                else:
-                    continue
-                
-                # Filter by time range
-                if user_time >= start_time:
-                    unique_users.add(user_doc.id)
-                    
-                    # Group by hour
-                    hour_key = user_time.strftime("%Y-%m-%d %H:00")
-                    connections_by_hour[hour_key] = connections_by_hour.get(hour_key, 0) + 1
-                    
-                    # Group by day
-                    day_key = user_time.strftime("%Y-%m-%d")
-                    connections_by_day[day_key] = connections_by_day.get(day_key, 0) + 1
-        
-        # Also count conversations created in period (active users)
-        conversations_ref = db.collection("conversations")
-        conversations = conversations_ref.stream()
-        
-        for conv in conversations:
-            data = conv.to_dict()
-            created_at = data.get("created_at")
+            if not user_id or not start_time_visit:
+                continue
             
-            if created_at:
-                if hasattr(created_at, 'timestamp'):
-                    conv_time = datetime.fromtimestamp(created_at.timestamp())
-                elif isinstance(created_at, datetime):
-                    conv_time = created_at
-                else:
+            # Ensure start_time_visit is a datetime
+            if isinstance(start_time_visit, str):
+                try:
+                    start_time_visit = datetime.fromisoformat(start_time_visit.replace('Z', '+00:00'))
+                except:
                     continue
+            elif not isinstance(start_time_visit, datetime):
+                continue
+            
+            # Filter by time range (double check)
+            if start_time_visit >= start_time:
+                unique_users.add(user_id)
                 
-                if conv_time >= start_time:
-                    user_id = data.get("user_id")
-                    if user_id:
-                        unique_users.add(user_id)
-                        
-                        hour_key = conv_time.strftime("%Y-%m-%d %H:00")
-                        connections_by_hour[hour_key] = connections_by_hour.get(hour_key, 0) + 1
-                        
-                        day_key = conv_time.strftime("%Y-%m-%d")
-                        connections_by_day[day_key] = connections_by_day.get(day_key, 0) + 1
+                # Group by hour
+                hour_key = start_time_visit.strftime("%Y-%m-%d %H:00")
+                connections_by_hour[hour_key] = connections_by_hour.get(hour_key, 0) + 1
+                
+                # Group by day
+                day_key = start_time_visit.strftime("%Y-%m-%d")
+                connections_by_day[day_key] = connections_by_day.get(day_key, 0) + 1
+                
+                # Track page views by page
+                page_views_by_page[page_path] = page_views_by_page.get(page_path, 0) + 1
         
         # Convert to lists for charts
         hourly_data = [{"hour": k, "count": v} for k, v in sorted(connections_by_hour.items())]
         daily_data = [{"day": k, "count": v} for k, v in sorted(connections_by_day.items())]
+        page_views_data = [{"page": k, "views": v} for k, v in sorted(page_views_by_page.items(), key=lambda x: x[1], reverse=True)]
         
         return {
             "period": period,
             "start_time": start_time.isoformat(),
             "end_time": now.isoformat(),
             "total_connections": len(unique_users),
+            "total_page_visits": len(page_visits),
             "hourly_breakdown": hourly_data,
             "daily_breakdown": daily_data,
+            "page_views_by_page": page_views_data[:10],  # Top 10 pages
         }
     except HTTPException:
         raise
@@ -166,75 +174,104 @@ async def get_session_stats(
 ):
     """
     Get session statistics (average session length, etc.) (Admin only)
-    Uses conversations as proxy for sessions
+    Uses page visits to calculate session lengths based on user activity
     """
     try:
-        db = get_db()
-        conversations_ref = db.collection("conversations")
-        conversations = conversations_ref.stream()
+        # Get all page visits to calculate session statistics
+        page_visits = FirestoreService.get_page_visits()
         
-        # Group conversations by user and calculate session length based on conversation activity
+        # Group visits by user and calculate session metrics
         user_sessions = {}
         session_lengths = []
+        page_durations = []
         
-        for conv in conversations:
-            data = conv.to_dict()
-            user_id = data.get("user_id")
-            created_at = data.get("created_at")
-            updated_at = data.get("updated_at")
-            messages = data.get("messages", [])
+        for visit in page_visits:
+            user_id = visit.get("user_id")
+            start_time = visit.get("start_time")
+            end_time = visit.get("end_time")
+            duration = visit.get("duration_seconds")
+            page_path = visit.get("page_path", "unknown")
             
-            if not user_id or not created_at:
+            if not user_id or not start_time:
                 continue
             
-            # Convert timestamps
-            if hasattr(created_at, 'timestamp'):
-                start_dt = datetime.fromtimestamp(created_at.timestamp())
-            elif isinstance(created_at, datetime):
-                start_dt = created_at
-            else:
+            # Ensure start_time is a datetime
+            if isinstance(start_time, str):
+                try:
+                    start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                except:
+                    continue
+            elif not isinstance(start_time, datetime):
                 continue
             
-            if updated_at:
-                if hasattr(updated_at, 'timestamp'):
-                    end_dt = datetime.fromtimestamp(updated_at.timestamp())
-                elif isinstance(updated_at, datetime):
-                    end_dt = updated_at
-                else:
-                    end_dt = start_dt
-            else:
-                end_dt = start_dt
-            
-            # Calculate session length (time between first and last message)
-            if len(messages) > 1:
-                # Estimate session length based on message count and time span
-                length = (end_dt - start_dt).total_seconds()
-                # Minimum 30 seconds per conversation
-                length = max(length, 30)
-                session_lengths.append(length)
-            
+            # Track user sessions
             if user_id not in user_sessions:
                 user_sessions[user_id] = {
-                    "start": start_dt,
-                    "end": end_dt,
-                    "conversations": 0
+                    "first_visit": start_time,
+                    "last_visit": start_time,
+                    "page_count": 0,
+                    "total_duration": 0,
                 }
             
-            user_sessions[user_id]["conversations"] += 1
-            if end_dt > user_sessions[user_id]["end"]:
-                user_sessions[user_id]["end"] = end_dt
+            user_sessions[user_id]["page_count"] += 1
+            if start_time < user_sessions[user_id]["first_visit"]:
+                user_sessions[user_id]["first_visit"] = start_time
+            if start_time > user_sessions[user_id]["last_visit"]:
+                user_sessions[user_id]["last_visit"] = start_time
+            
+            # Calculate duration
+            if duration:
+                user_sessions[user_id]["total_duration"] += duration
+                page_durations.append(duration)
+            elif end_time:
+                # Calculate duration from end_time
+                if isinstance(end_time, str):
+                    try:
+                        end_time = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                    except:
+                        end_time = None
+                elif not isinstance(end_time, datetime):
+                    end_time = None
+                
+                if end_time:
+                    duration = (end_time - start_time).total_seconds()
+                    user_sessions[user_id]["total_duration"] += duration
+                    page_durations.append(duration)
         
-        # Calculate average session length
+        # Calculate session lengths (time between first and last visit per user)
+        active_sessions = 0
+        completed_sessions = 0
+        
+        for user_id, session_data in user_sessions.items():
+            session_length = (session_data["last_visit"] - session_data["first_visit"]).total_seconds()
+            
+            # If last visit was recent (within last 30 minutes), consider it active
+            now = datetime.utcnow()
+            time_since_last_visit = (now - session_data["last_visit"]).total_seconds()
+            
+            if time_since_last_visit < 1800:  # 30 minutes
+                active_sessions += 1
+                # Estimate session length as time since first visit
+                session_length = (now - session_data["first_visit"]).total_seconds()
+            else:
+                completed_sessions += 1
+            
+            # Minimum 10 seconds per session
+            session_length = max(session_length, 10)
+            session_lengths.append(session_length)
+        
+        # Calculate averages
         avg_session_length = sum(session_lengths) / len(session_lengths) if session_lengths else 0
-        
-        # Calculate total active sessions (users with conversations)
-        total_sessions = len(user_sessions)
+        avg_page_duration = sum(page_durations) / len(page_durations) if page_durations else 0
         
         return {
-            "total_sessions": total_sessions,
-            "completed_sessions": len(session_lengths),
-            "average_session_length_seconds": avg_session_length,
-            "average_session_length_minutes": avg_session_length / 60 if avg_session_length else 0,
+            "total_sessions": len(user_sessions),
+            "active_sessions": active_sessions,
+            "completed_sessions": completed_sessions,
+            "average_session_length_seconds": round(avg_session_length, 2),
+            "average_session_length_minutes": round(avg_session_length / 60, 2),
+            "average_page_duration_seconds": round(avg_page_duration, 2),
+            "total_page_visits": len(page_visits),
         }
     except Exception as e:
         raise HTTPException(

@@ -198,5 +198,120 @@ export const api = {
     const response = await fetchWithAuth(`${API_V1_URL}/monitoring/stats/conversations`)
     return response.json()
   },
+
+
+  // Analytics event tracking
+  async logAnalyticsEvent(eventType: 'page_view' | 'session_start' | 'session_end' | 'login', metadata?: Record<string, any>): Promise<void> {
+    try {
+      const token = await getIdToken()
+      if (!token) {
+        // Silently fail if no token (user not authenticated)
+        return
+      }
+      
+      await fetchWithAuth(`${API_V1_URL}/auth/analytics-event`, {
+        method: 'POST',
+        body: JSON.stringify({
+          event_type: eventType,
+          metadata: metadata || {},
+        }),
+      })
+    } catch (error) {
+      // Silently fail - don't break the app if tracking fails
+      console.warn('Failed to log analytics event:', error)
+    }
+  },
+
+  // Page visit tracking endpoints
+  async logPageVisit(pagePath: string, startTime: Date, metadata?: Record<string, any>): Promise<string | null> {
+    try {
+      const token = await getIdToken()
+      if (!token) {
+        // Silently fail if no token (user not authenticated)
+        return null
+      }
+      
+      // Ensure device_type and previous_page are included in metadata
+      const fullMetadata = {
+        device_type: metadata?.device_type || 'unknown',
+        previous_page: metadata?.previous_page || null,
+        ...metadata,
+      }
+      
+      const response = await fetchWithAuth(`${API_V1_URL}/auth/page-visit`, {
+        method: 'POST',
+        body: JSON.stringify({
+          page_path: pagePath,
+          start_time: startTime.toISOString(),
+          metadata: fullMetadata,
+        }),
+      })
+      
+      const data = await response.json()
+      return data.visit_id || null
+    } catch (error) {
+      // Silently fail - don't break the app if tracking fails
+      console.warn('Failed to log page visit:', error)
+      return null
+    }
+  },
+
+  async endPageVisit(visitId: string, endTime: Date): Promise<void> {
+    try {
+      const token = await getIdToken()
+      if (!token) {
+        // Silently fail if no token (user not authenticated)
+        return
+      }
+      
+      await fetchWithAuth(`${API_V1_URL}/auth/page-visit/end`, {
+        method: 'POST',
+        body: JSON.stringify({
+          visit_id: visitId,
+          end_time: endTime.toISOString(),
+        }),
+      })
+    } catch (error) {
+      // Silently fail - don't break the app if tracking fails
+      console.warn('Failed to end page visit:', error)
+    }
+  },
+
+  // Analytics Dashboard endpoints
+  async getAnalyticsOverview(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/analytics/overview`)
+    return response.json()
+  },
+
+  async getTrafficAnalytics(period: 'day' | 'week' | 'month' = 'day'): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/analytics/traffic?period=${period}`)
+    return response.json()
+  },
+
+  async getEngagementAnalytics(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/analytics/engagement`)
+    return response.json()
+  },
+
+  async getAcquisitionAnalytics(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/analytics/acquisition`)
+    return response.json()
+  },
+
+  // AI Analytics Dashboard endpoints
+  async getAIConversationsAnalytics(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/ai-analytics/conversations`)
+    return response.json()
+  },
+
+  async getAIPerformanceAnalytics(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/ai-analytics/performance`)
+    return response.json()
+  },
+
+  async getAITracesAnalytics(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/ai-analytics/traces`)
+    return response.json()
+  },
 }
 
