@@ -569,28 +569,53 @@ class FirestoreService:
     ) -> List[Dict[str, Any]]:
         """
         Get AI events with optional filters
+        Note: When filtering by event_type, we fetch all events and filter in memory
+        to avoid requiring a composite index in Firestore.
         """
         try:
             db = get_db()
             events_ref = db.collection("ai_events")
             query = events_ref
             
-            if event_type:
-                query = query.where(filter=FieldFilter("event_type", "==", event_type))
-            if user_id:
-                query = query.where(filter=FieldFilter("user_id", "==", user_id))
-            if conversation_id:
-                query = query.where(filter=FieldFilter("conversation_id", "==", conversation_id))
-            if start_time:
-                query = query.where(filter=FieldFilter("created_at", ">=", start_time))
-            if end_time:
-                query = query.where(filter=FieldFilter("created_at", "<=", end_time))
+            # If we have event_type filter, we'll filter in memory to avoid index requirement
+            # Otherwise, we can use Firestore queries directly
+            needs_memory_filter = event_type is not None
             
-            docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+            if not needs_memory_filter:
+                # No event_type filter, we can use Firestore queries directly
+                if user_id:
+                    query = query.where(filter=FieldFilter("user_id", "==", user_id))
+                if conversation_id:
+                    query = query.where(filter=FieldFilter("conversation_id", "==", conversation_id))
+                if start_time:
+                    query = query.where(filter=FieldFilter("created_at", ">=", start_time))
+                if end_time:
+                    query = query.where(filter=FieldFilter("created_at", "<=", end_time))
+                
+                # Only order_by if we don't have complex filters that require index
+                if not (start_time or end_time):
+                    docs = query.order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+                else:
+                    docs = query.stream()
+            else:
+                # We have event_type filter, fetch all and filter in memory
+                docs = query.stream()
             
             events = []
             for doc in docs:
                 data = doc.to_dict()
+                
+                # Filter by event_type in memory if needed
+                if needs_memory_filter and data.get("event_type") != event_type:
+                    continue
+                
+                # Filter by other fields in memory if event_type filter is active
+                if needs_memory_filter:
+                    if user_id and data.get("user_id") != user_id:
+                        continue
+                    if conversation_id and data.get("conversation_id") != conversation_id:
+                        continue
+                
                 created_at = data.get("created_at")
                 if hasattr(created_at, 'timestamp'):
                     created_at = datetime.fromtimestamp(created_at.timestamp())
@@ -602,6 +627,13 @@ class FirestoreService:
                 elif not isinstance(created_at, datetime):
                     created_at = datetime.utcnow()
                 
+                # Filter by time range in memory if event_type filter is active
+                if needs_memory_filter:
+                    if start_time and created_at < start_time:
+                        continue
+                    if end_time and created_at > end_time:
+                        continue
+                
                 events.append({
                     "event_id": doc.id,
                     "event_type": data.get("event_type"),
@@ -610,6 +642,10 @@ class FirestoreService:
                     "created_at": created_at,
                     **{k: v for k, v in data.items() if k not in ["event_type", "user_id", "conversation_id", "created_at", "timestamp"]}
                 })
+            
+            # Sort by created_at descending if we filtered in memory
+            if needs_memory_filter:
+                events.sort(key=lambda x: x.get("created_at", datetime.min), reverse=True)
             
             return events
         except Exception as e:

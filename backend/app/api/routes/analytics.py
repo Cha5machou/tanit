@@ -5,6 +5,9 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from collections import defaultdict
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -94,24 +97,33 @@ async def get_analytics_overview(
         single_page_sessions = sum(1 for user_id, visit_times in user_sessions.items() if len(visit_times) == 1)
         bounce_rate = single_page_sessions / total_sessions if total_sessions > 0 else 0
         
-        # Country distribution: Get nationality from profiles
+        # Country distribution: Get nationality (ISO2 code) from profiles
         profiles_ref = db.collection("profiles")
         profiles = profiles_ref.stream()
         country_counts = defaultdict(int)
         
+        profile_count = 0
         for profile_doc in profiles:
+            profile_count += 1
             profile_data = profile_doc.to_dict()
             nationalite = profile_data.get("nationalite")
             if nationalite:
-                country_counts[nationalite] += 1
-            else:
-                country_counts["Unknown"] += 1
+                # nationalite should already be ISO2 code (e.g., "FR", "US", "GB", "TN")
+                # Convert to uppercase to ensure consistency
+                iso2_code = nationalite.upper().strip()
+                if len(iso2_code) == 2:  # Valid ISO2 code
+                    country_counts[iso2_code] += 1
+                    logger.debug(f"Found nationality: {iso2_code} for profile {profile_doc.id}")
         
-        # Create country distribution data
+        logger.info(f"Processed {profile_count} profiles, found {len(country_counts)} countries: {dict(country_counts)}")
+        
+        # Create country distribution data (using ISO2 codes)
         country_distribution = [
-            {"country": country, "count": count}
-            for country, count in sorted(country_counts.items(), key=lambda x: x[1], reverse=True)
+            {"country": country_code, "count": count}
+            for country_code, count in sorted(country_counts.items(), key=lambda x: x[1], reverse=True)
         ]
+        
+        logger.info(f"Country distribution: {country_distribution}")
         
         return {
             "total_users": total_users,

@@ -265,6 +265,15 @@ export default function MonitoringPage() {
   }
 
   const handleCloseInactiveVisits = async () => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      'Êtes-vous sûr de vouloir fermer toutes les visites inactives depuis plus de 30 minutes ?\n\nCette action est irréversible.'
+    )
+    
+    if (!confirmed) {
+      return
+    }
+    
     setClosingVisits(true)
     try {
       const result = await api.closeInactiveVisits(30)
@@ -440,8 +449,16 @@ export default function MonitoringPage() {
                         <div className="bg-white p-6 rounded-lg shadow">
                           <h3 className="text-lg font-semibold mb-4">User Country Distribution</h3>
                           <div className="w-full overflow-x-auto">
+                            {console.log('Passing country_distribution to map:', overviewData.country_distribution)}
                             <WorldMapChartWrapper data={overviewData.country_distribution} />
                           </div>
+                        </div>
+                      )}
+                      {(!overviewData.country_distribution || overviewData.country_distribution.length === 0) && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-lg font-semibold mb-4">User Country Distribution</h3>
+                          <p className="text-gray-500">Aucune donnée de pays disponible</p>
+                          {console.log('No country_distribution data:', overviewData)}
                         </div>
                       )}
                     </div>
