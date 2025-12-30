@@ -201,18 +201,29 @@ class AIAgentService:
                     messages = conv_data.get("messages", [])
                     # Load ALL previous messages (the current question hasn't been saved yet)
                     # The ConversationalRetrievalChain will add the current question automatically
+                    loaded_count = 0
                     for msg in messages:
                         content = msg.get("content", "")
-                        if content:  # Only add non-empty messages
-                            if msg.get("role") == "user":
-                                memory.chat_memory.add_user_message(HumanMessage(content=content))
-                            elif msg.get("role") == "assistant":
-                                memory.chat_memory.add_ai_message(AIMessage(content=content))
-                    logger.info(f"Loaded {len(messages)} messages from Firestore for conversation {conversation_id}")
+                        role = msg.get("role", "")
+                        if content and content.strip():  # Only add non-empty messages
+                            if role == "user":
+                                memory.chat_memory.add_user_message(HumanMessage(content=content.strip()))
+                                loaded_count += 1
+                            elif role == "assistant":
+                                memory.chat_memory.add_ai_message(AIMessage(content=content.strip()))
+                                loaded_count += 1
+                    logger.info(f"Loaded {loaded_count} messages from Firestore for conversation {conversation_id} (total messages in Firestore: {len(messages)})")
+                    # Debug: Log first few messages to verify they're loaded
+                    if loaded_count > 0:
+                        chat_history = memory.chat_memory.messages
+                        logger.debug(f"Memory contains {len(chat_history)} messages after loading")
+                        if len(chat_history) >= 2:
+                            logger.debug(f"First user message: {chat_history[0].content[:100] if hasattr(chat_history[0], 'content') else 'N/A'}")
+                            logger.debug(f"First assistant message: {chat_history[1].content[:100] if len(chat_history) > 1 and hasattr(chat_history[1], 'content') else 'N/A'}")
             except Exception as e:
-                logger.warning(f"Could not load conversation history from Firestore: {e}")
+                logger.error(f"Could not load conversation history from Firestore: {e}")
                 import traceback
-                logger.warning(traceback.format_exc())
+                logger.error(traceback.format_exc())
         
         # Store in cache for this request (will be reloaded next time)
         AIAgentService._memories[conversation_id] = memory
@@ -254,6 +265,8 @@ class AIAgentService:
         if system_prompt:
             template = f"""{system_prompt}
 
+IMPORTANT: Vous avez accès à l'historique complet de cette conversation ci-dessous. Vous pouvez répondre aux questions sur la conversation elle-même (comme "Quelle est ma première question?", "Résume notre conversation", etc.) en utilisant cet historique, même si ces informations ne sont pas dans les documents fournis.
+
 Historique de la conversation:
 {{chat_history}}
 
@@ -264,6 +277,8 @@ Question: {{question}}
 Réponse:"""
         else:
             template = """You are a helpful AI assistant that answers questions based on the provided context and conversation history.
+
+IMPORTANT: You have access to the full conversation history below. You can answer questions about the conversation itself (like "What was my first question?", "Summarize our conversation", etc.) using this history, even if this information is not in the provided documents.
 
 Conversation History:
 {chat_history}
@@ -321,15 +336,25 @@ Answer:"""
             )
             
             # Debug: Check memory state before query
-            if conversation_id in AIAgentService._memories:
-                memory = AIAgentService._memories[conversation_id]
-                chat_history = memory.chat_memory.messages
-                logger.info(f"Memory state before query - {len(chat_history)} messages in memory")
-                if chat_history:
-                    logger.debug(f"First few messages: {[(type(m).__name__, getattr(m, 'content', '')[:50]) for m in chat_history[:4]]}")
+            memory = AIAgentService._get_memory(conversation_id, user_id)
+            chat_history = memory.chat_memory.messages
+            logger.info(f"Memory state before query - {len(chat_history)} messages in memory for conversation {conversation_id}")
+            if chat_history:
+                logger.info(f"First few messages in memory: {[(type(m).__name__, getattr(m, 'content', '')[:100]) for m in chat_history[:4]]}")
+                # Log all user questions for debugging
+                from langchain_core.messages import HumanMessage
+                user_questions = [m.content for m in chat_history if isinstance(m, HumanMessage)]
+                if user_questions:
+                    logger.info(f"User questions in history: {len(user_questions)} questions")
+                    logger.info(f"First user question: {user_questions[0][:100] if user_questions else 'N/A'}")
+            else:
+                logger.warning(f"No messages in memory for conversation {conversation_id} - memory may not be loading correctly")
             
             # Run chain
+            logger.info(f"Invoking chain with question: {question[:100]}...")
             result = await chain.ainvoke({"question": question})
+            logger.info(f"Chain completed - answer length: {len(result.get('answer', ''))}")
+            logger.info(f"Answer preview: {result.get('answer', '')[:200]}")
             
             # Extract answer and sources
             answer = result.get("answer", "")

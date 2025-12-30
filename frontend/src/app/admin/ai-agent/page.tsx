@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { RoleGuard } from '@/components/RoleGuard'
+import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/Button'
 import { useRouter } from 'next/navigation'
 import { api } from '@/services/api'
@@ -128,13 +129,16 @@ export default function AIAgentPage() {
         <header className="bg-white shadow">
           <div className="mx-auto max-w-7xl px-4 py-6">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Agent IA
-                </h1>
-                <p className="mt-1 text-sm text-gray-600">
-                  Gérer les documents et la configuration de l'agent IA
-                </p>
+              <div className="flex items-center gap-3">
+                <Logo size="md" />
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Agent IA
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Gérer les documents et la configuration de l'agent IA
+                  </p>
+                </div>
               </div>
               <Button variant="outline" onClick={() => router.push('/admin')}>
                 Retour

@@ -273,6 +273,7 @@ async def query_agent(
     # The memory will load all previous messages, then we'll add the current question
     start_time = time.time()
     try:
+        logger.info(f"Querying AI agent - conversation_id: {conversation_id}, user_id: {user_id}, question: {request.question[:50]}...")
         result = await AIAgentService.query(
             question=request.question,
             conversation_id=conversation_id,
@@ -285,6 +286,7 @@ async def query_agent(
             chunk_overlap=chunk_overlap,
             user_id=user_id
         )
+        logger.info(f"AI agent query completed - answer length: {len(result.get('answer', ''))}")
         
         latency_ms = (time.time() - start_time) * 1000
         

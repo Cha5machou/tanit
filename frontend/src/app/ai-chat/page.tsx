@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { AuthGuard } from '@/components/AuthGuard'
+import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/Button'
 import { useRouter } from 'next/navigation'
 import { api } from '@/services/api'
@@ -32,6 +33,7 @@ export default function AIChatPage() {
   const [streamContent, setStreamContent] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loadingConversations, setLoadingConversations] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false) // Mobile sidebar state - starts closed on mobile
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -80,6 +82,9 @@ export default function AIChatPage() {
       }))
       
       setMessages(formattedMessages)
+      
+      // Close sidebar on mobile after selecting a conversation
+      setSidebarOpen(false)
     } catch (error) {
       console.error('Error loading conversation:', error)
       alert('Erreur lors du chargement de la conversation')
@@ -208,22 +213,54 @@ export default function AIChatPage() {
 
   return (
     <AuthGuard requireAuth={true} requireProfile={true}>
-      <div className="min-h-screen bg-gray-50 flex">
-        {/* Sidebar - Always visible */}
-        <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="min-h-screen bg-gray-50 flex relative">
+        {/* Mobile Overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Sidebar - Responsive with toggle */}
+        <aside
+          className={`
+            fixed lg:static inset-y-0 left-0 z-50
+            w-64 bg-white border-r border-gray-200 flex flex-col
+            transition-transform duration-300 ease-in-out
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+            shadow-lg lg:shadow-none
+          `}
+        >
           {/* Sidebar Header */}
           <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Conversations</h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={startNewConversation}
-                className="text-xs"
+              {/* Close button for mobile */}
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="lg:hidden p-1 text-gray-500 hover:text-gray-700"
+                aria-label="Fermer la sidebar"
               >
-                + Nouvelle
-              </Button>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
+          </div>
+
+          {/* New Chat Button */}
+          <div className="p-4 border-b border-gray-200">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                startNewConversation()
+                setSidebarOpen(false) // Close sidebar on mobile
+              }}
+            >
+              💬 Nouveau Chat
+            </Button>
           </div>
 
           {/* Conversations List */}
@@ -273,31 +310,50 @@ export default function AIChatPage() {
               ← Retour
             </Button>
           </div>
-        </div>
+        </aside>
 
         {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col w-full lg:w-auto">
           {/* Chat Header */}
-          <header className="bg-white border-b border-gray-200 px-6 py-4">
+          <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Assistant IA</h1>
-                {conversationId && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    {conversations.find(c => c.conversation_id === conversationId)?.title || 'Conversation'}
-                  </p>
-                )}
+              <div className="flex items-center gap-3">
+                {/* Menu button - visible on all screens */}
+                <button
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label={sidebarOpen ? "Fermer la sidebar" : "Ouvrir la sidebar"}
+                >
+                  {sidebarOpen ? (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  )}
+                </button>
+                <Logo size="md" className="mr-2" />
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold text-gray-900">Assistant IA</h1>
+                  {conversationId && (
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate max-w-[200px] sm:max-w-none">
+                      {conversations.find(c => c.conversation_id === conversationId)?.title || 'Conversation'}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </header>
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
             {messages.length === 0 && !streaming && (
-              <div className="text-center text-gray-500 mt-20 max-w-md mx-auto">
-                <div className="text-4xl mb-4">💬</div>
-                <p className="text-lg font-medium mb-2">Bienvenue dans l'assistant IA</p>
-                <p className="text-sm">Posez une question pour commencer une conversation</p>
+              <div className="text-center text-gray-500 mt-10 sm:mt-20 max-w-md mx-auto px-4">
+                <div className="text-3xl sm:text-4xl mb-4">💬</div>
+                <p className="text-base sm:text-lg font-medium mb-2">Bienvenue dans l'assistant IA</p>
+                <p className="text-xs sm:text-sm">Posez une question pour commencer une conversation</p>
               </div>
             )}
 
@@ -308,13 +364,13 @@ export default function AIChatPage() {
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                    className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2 sm:py-3 ${
                       msg.role === 'user'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white text-gray-900 shadow-sm border border-gray-200'
                     }`}
                   >
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.content}</p>
+                    <p className="whitespace-pre-wrap text-xs sm:text-sm leading-relaxed">{msg.content}</p>
                     <p className={`text-xs mt-1 ${
                       msg.role === 'user' ? 'text-blue-100' : 'text-gray-400'
                     }`}>
@@ -329,8 +385,8 @@ export default function AIChatPage() {
 
               {streaming && streamContent && (
                 <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-white text-gray-900 shadow-sm border border-gray-200">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{streamContent}</p>
+                  <div className="max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2 sm:py-3 bg-white text-gray-900 shadow-sm border border-gray-200">
+                    <p className="whitespace-pre-wrap text-xs sm:text-sm leading-relaxed">{streamContent}</p>
                     <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" />
                   </div>
                 </div>
@@ -341,7 +397,7 @@ export default function AIChatPage() {
           </div>
 
           {/* Input Area */}
-          <div className="bg-white border-t border-gray-200 p-4">
+          <div className="bg-white border-t border-gray-200 p-3 sm:p-4">
             <div className="max-w-3xl mx-auto">
               <div className="flex gap-2 items-end">
                 <textarea
@@ -356,19 +412,19 @@ export default function AIChatPage() {
                   }}
                   placeholder="Posez votre question..."
                   rows={1}
-                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  className="flex-1 px-3 sm:px-4 py-2 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   disabled={loading || streaming}
                   style={{ minHeight: '44px', maxHeight: '120px' }}
                 />
                 <Button
                   onClick={handleQuery}
                   disabled={loading || streaming || !question.trim()}
-                  className="px-6"
+                  className="px-4 sm:px-6 text-sm sm:text-base whitespace-nowrap"
                 >
                   {streaming ? '...' : 'Envoyer'}
                 </Button>
               </div>
-              <p className="text-xs text-gray-500 mt-2 text-center">
+              <p className="text-xs text-gray-500 mt-2 text-center hidden sm:block">
                 Appuyez sur Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne
               </p>
             </div>

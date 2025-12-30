@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { RoleGuard } from '@/components/RoleGuard'
+import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { useRouter } from 'next/navigation'
@@ -49,13 +50,16 @@ export default function UsersPage() {
         <header className="bg-white shadow">
           <div className="mx-auto max-w-7xl px-4 py-6">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Gestion des utilisateurs
-                </h1>
-                <p className="mt-1 text-sm text-gray-600">
-                  Gérez les rôles des utilisateurs
-                </p>
+              <div className="flex items-center gap-3">
+                <Logo size="md" />
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Gestion des utilisateurs
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Gérez les rôles des utilisateurs
+                  </p>
+                </div>
               </div>
               <Button variant="outline" onClick={() => router.push('/admin')}>
                 Retour

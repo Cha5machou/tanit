@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { RoleGuard } from '@/components/RoleGuard'
+import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useRouter } from 'next/navigation'
@@ -138,13 +139,16 @@ export default function POIPage() {
         <header className="bg-white shadow">
           <div className="mx-auto max-w-7xl px-4 py-6">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Points d&apos;intérêt
-                </h1>
-                <p className="mt-1 text-sm text-gray-600">
-                  Gérez les attractions et leurs coordonnées
-                </p>
+              <div className="flex items-center gap-3">
+                <Logo size="md" />
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Points d&apos;intérêt
+                  </h1>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Gérez les attractions et leurs coordonnées
+                  </p>
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button variant="primary" onClick={() => {

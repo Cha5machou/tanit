@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { AuthGuard } from '@/components/AuthGuard'
 import { Button } from '@/components/ui/Button'
+import { Logo } from '@/components/Logo'
 import { useRouter } from 'next/navigation'
 import { api } from '@/services/api'
 import { API_V1_URL } from '@/lib/constants'
@@ -35,6 +36,7 @@ export default function AIChatPage() {
   const [isLoadingResponse, setIsLoadingResponse] = useState(false)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loadingConversations, setLoadingConversations] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(true) // Sidebar state - open by default on desktop, closed on mobile
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const wordDisplayTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -109,6 +111,9 @@ export default function AIChatPage() {
       }))
       
       setMessages(formattedMessages)
+      
+      // Close sidebar on mobile after selecting a conversation
+      setSidebarOpen(false)
     } catch (error) {
       console.error('Error loading conversation:', error)
       alert('Erreur lors du chargement de la conversation')
@@ -320,22 +325,54 @@ export default function AIChatPage() {
 
   return (
     <AuthGuard requireAuth={true} requireProfile={true}>
-      <div className="min-h-screen bg-gray-50 flex">
-        {/* Sidebar - Always visible */}
-        <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="min-h-screen bg-gray-50 flex relative">
+        {/* Mobile Overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Sidebar - Responsive with toggle */}
+        <aside
+          className={`
+            fixed inset-y-0 left-0 z-50
+            w-64 bg-white border-r border-gray-200 flex flex-col
+            transition-transform duration-300 ease-in-out
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            shadow-lg lg:shadow-none
+          `}
+        >
           {/* Sidebar Header */}
           <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">Conversations</h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={startNewConversation}
-                className="text-xs"
+              {/* Close button - visible on all screens */}
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="p-1 text-gray-500 hover:text-gray-700 rounded hover:bg-gray-100 transition-colors"
+                aria-label="Fermer la sidebar"
               >
-                + Nouvelle
-              </Button>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
+          </div>
+
+          {/* New Chat Button */}
+          <div className="p-4 border-b border-gray-200">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                startNewConversation()
+                setSidebarOpen(false) // Close sidebar on mobile
+              }}
+            >
+              💬 Nouveau Chat
+            </Button>
           </div>
 
           {/* Conversations List */}
@@ -385,20 +422,39 @@ export default function AIChatPage() {
               ← Retour
             </Button>
           </div>
-        </div>
+        </aside>
 
         {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col">
-          {/* Chat Header */}
-          <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex-1 flex flex-col w-full lg:w-auto">
+          {/* Chat Header - Sticky */}
+          <header className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Assistant IA</h1>
-                {conversationId && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    {conversations.find(c => c.conversation_id === conversationId)?.title || 'Conversation'}
-                  </p>
-                )}
+              <div className="flex items-center gap-3">
+                {/* Menu button - visible on all screens */}
+                <button
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  aria-label={sidebarOpen ? "Fermer la sidebar" : "Ouvrir la sidebar"}
+                >
+                  {sidebarOpen ? (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  )}
+                </button>
+                <Logo size="md" className="mr-2" />
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold text-gray-900">Assistant IA</h1>
+                  {conversationId && (
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate max-w-[200px] sm:max-w-none">
+                      {conversations.find(c => c.conversation_id === conversationId)?.title || 'Conversation'}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </header>
@@ -487,21 +543,21 @@ export default function AIChatPage() {
                   placeholder="Posez votre question..."
                   rows={1}
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                  disabled={loading || streaming}
+                  disabled={loading || streaming || isLoadingResponse}
                   style={{ minHeight: '44px', maxHeight: '120px' }}
                 />
                 <Button
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    console.log('Button clicked', { question, loading, streaming })
+                    console.log('Button clicked', { question, loading, streaming, isLoadingResponse })
                     handleQuery()
                   }}
-                  disabled={loading || streaming || !question.trim()}
+                  disabled={loading || streaming || isLoadingResponse || !question.trim()}
                   className="px-6"
                   type="button"
                 >
-                  {streaming ? '...' : 'Envoyer'}
+                  {(streaming || isLoadingResponse) ? '...' : 'Envoyer'}
                 </Button>
               </div>
               <p className="text-xs text-gray-500 mt-2 text-center">

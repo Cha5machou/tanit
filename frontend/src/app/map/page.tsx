@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { AuthGuard } from '@/components/AuthGuard'
+import { Logo } from '@/components/Logo'
 import { api } from '@/services/api'
 import { POI } from '@/types'
 import dynamic from 'next/dynamic'
@@ -53,7 +54,10 @@ export default function MapPage() {
     <AuthGuard requireAuth={true} requireProfile={true}>
       <div className="flex h-screen flex-col">
         <header className="border-b bg-white px-4 py-3 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Carte interactive</h1>
+          <div className="flex items-center gap-3">
+            <Logo size="md" />
+            <h1 className="text-xl font-semibold">Carte interactive</h1>
+          </div>
           <button
             onClick={() => router.push('/')}
             className="text-gray-600 hover:text-gray-900"
