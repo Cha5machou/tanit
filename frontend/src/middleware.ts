@@ -20,6 +20,30 @@ export function middleware(request: NextRequest) {
     'unsafe-none'
   )
 
+  // Content Security Policy
+  // Only set CSP in production to avoid blocking Next.js hot reloading in development
+  const isDevelopment = process.env.NODE_ENV === 'development'
+  
+  if (!isDevelopment) {
+    // In production, use strict CSP without unsafe-eval
+    const cspDirectives = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://*.googleapis.com https://*.gstatic.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: https: blob:",
+      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com",
+      "frame-src 'self' https://*.googleapis.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "upgrade-insecure-requests",
+    ]
+    response.headers.set('Content-Security-Policy', cspDirectives.join('; '))
+  }
+  // In development, don't set CSP to allow Next.js hot reloading with eval()
+
   // Allow public routes
   if (publicRoutes.includes(pathname)) {
     return response

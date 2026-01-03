@@ -18,7 +18,7 @@ interface ShuffledQuestion extends QuizQuestionForUser {
 }
 
 export default function QuizPage() {
-  const { user } = useAuth()
+  const { user, isAuthenticated, loading: authLoading } = useAuth()
   const router = useRouter()
   const [questions, setQuestions] = useState<ShuffledQuestion[]>([])
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -59,8 +59,11 @@ export default function QuizPage() {
   }
 
   useEffect(() => {
-    checkEligibility()
-  }, [])
+    // Only check eligibility when authentication is ready
+    if (!authLoading && isAuthenticated) {
+      checkEligibility()
+    }
+  }, [authLoading, isAuthenticated])
 
   useEffect(() => {
     if (questions.length > 0 && currentQuestionIndex < questions.length && !isQuizComplete) {
@@ -83,7 +86,7 @@ export default function QuizPage() {
         // User can take quiz - load questions
         await loadQuestions()
       } else {
-        // User already took quiz today - load their results immediately
+        // User already took quiz today - show results immediately
         if (eligibilityData.today_submission) {
           setSubmission(eligibilityData.today_submission)
           setIsQuizComplete(true)
@@ -100,6 +103,21 @@ export default function QuizPage() {
   const loadQuestions = async () => {
     try {
       setLoading(true)
+      
+      // Double check eligibility before loading questions
+      const eligibilityCheck = await api.checkQuizEligibility()
+      if (!eligibilityCheck.can_take_quiz) {
+        // User already took quiz - don't load questions
+        setEligibility(eligibilityCheck)
+        if (eligibilityCheck.today_submission) {
+          setSubmission(eligibilityCheck.today_submission)
+          setIsQuizComplete(true)
+          await Promise.all([loadLeaderboard(), loadAverageScore()])
+        }
+        setLoading(false)
+        return
+      }
+      
       const activeQuestions = await api.getActiveQuizQuestions()
       
       // Shuffle options for each question
@@ -208,9 +226,16 @@ export default function QuizPage() {
       setSubmission(submissionData)
       setIsQuizComplete(true)
       
+      // Update eligibility state
+      setEligibility({
+        can_take_quiz: false,
+        already_taken_today: true,
+        today_submission: submissionData,
+      })
+      
       // Load leaderboard and average score
-      await loadLeaderboard()
-    } catch (error) {
+      await Promise.all([loadLeaderboard(), loadAverageScore()])
+    } catch (error: any) {
       console.error('Error submitting quiz:', error)
       alert('Erreur lors de la soumission du quiz')
     }
@@ -227,33 +252,8 @@ export default function QuizPage() {
 
   const loadLeaderboard = async () => {
     try {
-      const submissions = await api.listQuizSubmissions()
-      
-      // Calculate average score if not already loaded
-      if (submissions.length > 0 && averageScore === 0) {
-        const totalScore = submissions.reduce((sum, s) => sum + s.score, 0)
-        setAverageScore(Math.round(totalScore / submissions.length))
-      }
-      
-      // Get user names and create leaderboard
-      const leaderboardData = submissions
-        .map((s) => ({
-          user_id: s.user_id,
-          score: s.score,
-          submitted_at: s.submitted_at,
-        }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10) // Top 10
-      
-      // Fetch user names (we'll need to add this to the API or fetch separately)
-      // For now, we'll use user_id and mask it
-      const leaderboardWithNames = leaderboardData.map((entry, index) => ({
-        ...entry,
-        position: index + 1,
-        displayName: maskUserName(entry.user_id),
-      }))
-      
-      setLeaderboard(leaderboardWithNames)
+      const leaderboardData = await api.getQuizLeaderboard()
+      setLeaderboard(leaderboardData)
     } catch (error) {
       console.error('Error loading leaderboard:', error)
     }
@@ -375,24 +375,117 @@ export default function QuizPage() {
             </div>
 
             <div className="bg-white rounded-lg shadow p-6 mb-6">
+              <h2 className="text-xl font-bold mb-4">Détail des Réponses</h2>
+              <div className="space-y-6">
+                {submission.answers && Array.isArray(submission.answers) ? (
+                  submission.answers.map((answer, index) => (
+                  <div key={answer.question_id} className="border-b pb-4 last:border-b-0">
+                    <div className="flex items-start justify-between mb-3">
+                      <h3 className="font-semibold text-lg">
+                        Question {index + 1}: {answer.question}
+                      </h3>
+                      {answer.is_correct ? (
+                        <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold">
+                          ✓ Correct
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-semibold">
+                          ✗ Incorrect
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      {answer.options && Array.isArray(answer.options) ? (
+                        answer.options.map((option, optionIndex) => {
+                          const isSelected = optionIndex === answer.selected_index
+                          const isCorrect = optionIndex === answer.correct_index
+                          
+                          let bgColor = 'bg-gray-50'
+                          let borderColor = 'border-gray-200'
+                          let textColor = 'text-gray-900'
+                          
+                          if (isCorrect) {
+                            bgColor = 'bg-green-50'
+                            borderColor = 'border-green-500'
+                            textColor = 'text-green-900'
+                          } else if (isSelected && !isCorrect) {
+                            bgColor = 'bg-red-50'
+                            borderColor = 'border-red-500'
+                            textColor = 'text-red-900'
+                          }
+                          
+                          return (
+                            <div
+                              key={optionIndex}
+                              className={`p-3 rounded-lg border-2 ${bgColor} ${borderColor} ${textColor}`}
+                            >
+                              <div className="flex items-center gap-2">
+                                {isCorrect && (
+                                  <span className="text-green-600 font-bold">✓</span>
+                                )}
+                                {isSelected && !isCorrect && (
+                                  <span className="text-red-600 font-bold">✗</span>
+                                )}
+                                <span className={isCorrect ? 'font-semibold' : ''}>
+                                  {option}
+                                </span>
+                                {isCorrect && (
+                                  <span className="ml-auto text-xs text-green-700 font-medium">
+                                    (Bonne réponse)
+                                  </span>
+                                )}
+                                {isSelected && !isCorrect && (
+                                  <span className="ml-auto text-xs text-red-700 font-medium">
+                                    (Votre réponse)
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <p className="text-gray-500 text-sm">Options non disponibles</p>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Temps pris: {answer.time_taken}s
+                    </p>
+                  </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-center py-4">Aucun détail de réponse disponible</p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow p-6 mb-6">
               <h2 className="text-xl font-bold mb-4">Classement (Top 10)</h2>
               <div className="space-y-2">
-                {leaderboard.map((entry) => (
-                  <div
-                    key={entry.user_id}
-                    className={`flex items-center justify-between p-3 rounded ${
-                      entry.user_id === submission.user_id
-                        ? 'bg-blue-50 border-2 border-blue-500'
-                        : 'bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-gray-600">#{entry.position}</span>
-                      <span className="font-medium">{entry.displayName}</span>
+                {leaderboard.length > 0 ? (
+                  leaderboard.map((entry) => (
+                    <div
+                      key={`leaderboard-${entry.user_id}-${entry.position}`}
+                      className={`flex items-center justify-between p-3 rounded ${
+                        entry.user_id === submission.user_id
+                          ? 'bg-blue-50 border-2 border-blue-500'
+                          : 'bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-gray-600">#{entry.position}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{entry.display_name}</span>
+                          {entry.submitted_date && (
+                            <span className="text-xs text-gray-500">{entry.submitted_date}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="font-bold text-blue-600">{entry.score}%</span>
                     </div>
-                    <span className="font-bold text-blue-600">{entry.score}%</span>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-center py-4">Chargement du classement...</p>
+                )}
               </div>
             </div>
 
@@ -422,12 +515,28 @@ export default function QuizPage() {
     )
   }
 
-  // Only allow quiz access if user can take quiz
+  // Only allow quiz access if user can take quiz - CRITICAL CHECK
   if (eligibility && !eligibility.can_take_quiz) {
+    // Don't show quiz questions if user already took quiz today
     return null // Results screen will be shown above
   }
 
-  if (questions.length === 0) {
+  // Additional safety check: don't show questions if eligibility hasn't been checked yet
+  if (!eligibility && questions.length > 0) {
+    return (
+      <AuthGuard requireAuth={true} requireProfile={true}>
+        <AdsContainer />
+        <div className="flex min-h-screen items-center justify-center pt-16 lg:pt-0 lg:pl-64 lg:pr-64">
+          <div className="text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-600 border-r-transparent"></div>
+            <p className="mt-4 text-gray-600">Vérification de votre éligibilité...</p>
+          </div>
+        </div>
+      </AuthGuard>
+    )
+  }
+
+  if (questions.length === 0 && eligibility && eligibility.can_take_quiz) {
     return (
       <AuthGuard requireAuth={true} requireProfile={true}>
         <AdsContainer />
@@ -441,6 +550,16 @@ export default function QuizPage() {
         </div>
       </AuthGuard>
     )
+  }
+
+  // Final check: Don't render quiz if user can't take it
+  if (!eligibility || !eligibility.can_take_quiz) {
+    return null
+  }
+
+  // FINAL CHECK: Don't render quiz if user can't take it
+  if (!eligibility || !eligibility.can_take_quiz) {
+    return null // Results screen should be shown above
   }
 
   const currentQuestion = questions[currentQuestionIndex]

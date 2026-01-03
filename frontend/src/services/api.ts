@@ -613,5 +613,15 @@ export const api = {
     const response = await fetchWithAuth(`${API_V1_URL}/quiz/statistics`)
     return response.json()
   },
+
+  async getQuizStats(): Promise<any> {
+    // Alias for getQuizStatistics
+    return this.getQuizStatistics()
+  },
+
+  async getQuizLeaderboard(): Promise<any[]> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/leaderboard`)
+    return response.json()
+  },
 }
 

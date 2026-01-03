@@ -970,10 +970,41 @@ class FirestoreService:
             today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
             today_end = today_start + timedelta(days=1)
             
-            query = db.collection("quiz_submissions").where("user_id", "==", user_id).where("submitted_at", ">=", today_start).where("submitted_at", "<", today_end).limit(1)
+            # Get all user submissions without order_by to avoid composite index requirement
+            # Just filter by user_id (single field index, which should exist)
+            query = db.collection("quiz_submissions").where("user_id", "==", user_id)
             docs = list(query.stream())
-            if docs:
-                return docs[0].to_dict()
+            
+            # Filter by today's date and find the most recent one
+            today_submissions = []
+            for doc in docs:
+                submission = doc.to_dict()
+                submitted_at = submission.get("submitted_at")
+                
+                # Convert to datetime if needed
+                if hasattr(submitted_at, 'timestamp'):
+                    submitted_dt = datetime.fromtimestamp(submitted_at.timestamp(), tz=timezone.utc)
+                elif isinstance(submitted_at, datetime):
+                    submitted_dt = submitted_at
+                    if submitted_dt.tzinfo is None:
+                        submitted_dt = submitted_dt.replace(tzinfo=timezone.utc)
+                elif isinstance(submitted_at, str):
+                    try:
+                        submitted_dt = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
+                    except:
+                        continue
+                else:
+                    continue
+                
+                # Check if submission is today
+                if today_start <= submitted_dt < today_end:
+                    today_submissions.append((submitted_dt, submission))
+            
+            # Return the most recent submission from today if any
+            if today_submissions:
+                today_submissions.sort(key=lambda x: x[0], reverse=True)
+                return today_submissions[0][1]
+            
             return None
         except Exception as e:
             logger.error(f"Error checking user quiz submission today: {e}")

@@ -350,6 +350,7 @@ async def check_quiz_eligibility(
             
             result["today_submission"] = {
                 "submission_id": today_submission["submission_id"],
+                "user_id": user_id,
                 "score": today_submission["score"],
                 "total_questions": today_submission["total_questions"],
                 "correct_answers": today_submission["correct_answers"],
@@ -409,6 +410,7 @@ async def submit_quiz(
             answer_details.append({
                 "question_id": question_id,
                 "question": question["question"],
+                "options": question["options"],
                 "selected_index": selected_index,
                 "correct_index": question["correct_answer_index"],
                 "is_correct": is_correct,
@@ -488,6 +490,89 @@ async def list_quiz_submissions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error listing quiz submissions: {str(e)}"
+        )
+
+
+@router.get("/quiz/leaderboard")
+async def get_quiz_leaderboard(
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Get quiz leaderboard with masked names and dates"""
+    try:
+        submissions = FirestoreService.list_quiz_submissions()
+        
+        # Sort by score descending and take top 10
+        submissions_sorted = sorted(submissions, key=lambda x: x["score"], reverse=True)[:10]
+        
+        result = []
+        for index, s in enumerate(submissions_sorted):
+            user_id = s["user_id"]
+            user_data = FirestoreService.get_user(user_id)
+            
+            # Get and mask user name
+            display_name = "Utilisateur anonyme"
+            first_name = ""
+            masked_surname = ""
+            
+            try:
+                from firebase_admin import auth as firebase_auth
+                try:
+                    firebase_user = firebase_auth.get_user(user_id)
+                    name = firebase_user.display_name
+                    if name:
+                        name_parts = name.split(' ')
+                        if len(name_parts) >= 2:
+                            first_name = name_parts[0]
+                            surname = ' '.join(name_parts[1:])
+                            masked_surname = surname[0] + '*' * max(len(surname) - 1, 1) if len(surname) > 1 else '*'
+                            display_name = f"{first_name} {masked_surname}"
+                        else:
+                            display_name = name[0] + '*' * max(len(name) - 1, 1) if len(name) > 1 else '*'
+                except Exception:
+                    if user_data:
+                        email = user_data.get("email", "")
+                        if email:
+                            email_parts = email.split("@")
+                            if len(email_parts) > 0:
+                                display_name = f"{email_parts[0][:2]}***"
+            except Exception:
+                if user_data:
+                    email = user_data.get("email", "")
+                    if email:
+                        email_parts = email.split("@")
+                        if len(email_parts) > 0:
+                            display_name = f"{email_parts[0][:2]}***"
+            
+            # Format date (only date, not timestamp)
+            submitted_at = s.get("submitted_at")
+            submitted_date = None
+            if submitted_at:
+                if hasattr(submitted_at, 'timestamp'):
+                    dt = datetime.fromtimestamp(submitted_at.timestamp())
+                    submitted_date = dt.strftime('%Y-%m-%d')
+                elif isinstance(submitted_at, str):
+                    try:
+                        dt = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
+                        submitted_date = dt.strftime('%Y-%m-%d')
+                    except:
+                        submitted_date = None
+            
+            result.append({
+                "user_id": user_id,
+                "display_name": display_name,
+                "first_name": first_name,
+                "masked_surname": masked_surname,
+                "score": s["score"],
+                "submitted_date": submitted_date,
+                "position": index + 1,
+            })
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error getting quiz leaderboard: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting quiz leaderboard: {str(e)}"
         )
 
 
