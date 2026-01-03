@@ -407,6 +407,26 @@ export default function QuizPage() {
     )
   }
 
+  // Prevent access to quiz if user already took it today
+  if (eligibility && !eligibility.can_take_quiz && !submission) {
+    return (
+      <AuthGuard requireAuth={true} requireProfile={true}>
+        <AdsContainer />
+        <div className="flex min-h-screen items-center justify-center pt-16 lg:pt-0 lg:pl-64 lg:pr-64">
+          <div className="text-center">
+            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-600 border-r-transparent"></div>
+            <p className="mt-4 text-gray-600">Chargement de vos résultats...</p>
+          </div>
+        </div>
+      </AuthGuard>
+    )
+  }
+
+  // Only allow quiz access if user can take quiz
+  if (eligibility && !eligibility.can_take_quiz) {
+    return null // Results screen will be shown above
+  }
+
   if (questions.length === 0) {
     return (
       <AuthGuard requireAuth={true} requireProfile={true}>
