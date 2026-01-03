@@ -85,7 +85,7 @@ export default function QuizPage() {
         if (eligibilityData.today_submission) {
           setSubmission(eligibilityData.today_submission)
           setIsQuizComplete(true)
-          await loadLeaderboard()
+          await Promise.all([loadLeaderboard(), loadAverageScore()])
         }
         setLoading(false)
       }
@@ -214,12 +214,21 @@ export default function QuizPage() {
     }
   }
 
+  const loadAverageScore = async () => {
+    try {
+      const stats = await api.getQuizStats()
+      setAverageScore(Math.round(stats.average_score))
+    } catch (error) {
+      console.error('Error loading average score:', error)
+    }
+  }
+
   const loadLeaderboard = async () => {
     try {
       const submissions = await api.listQuizSubmissions()
       
-      // Calculate average score
-      if (submissions.length > 0) {
+      // Calculate average score if not already loaded
+      if (submissions.length > 0 && averageScore === 0) {
         const totalScore = submissions.reduce((sum, s) => sum + s.score, 0)
         setAverageScore(Math.round(totalScore / submissions.length))
       }
