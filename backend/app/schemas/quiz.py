@@ -38,6 +38,15 @@ class QuizSubmissionRequest(BaseModel):
     # Format: [{"question_id": "xxx", "selected_index": 0, "time_taken": 45}]
 
 
+class QuizQuestionForUser(BaseModel):
+    question_id: str
+    question: str
+    options: List[str]
+    tags: List[str]
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 class QuizSubmissionResponse(BaseModel):
     submission_id: str
     user_id: str

@@ -5,6 +5,7 @@ from app.schemas.quiz import (
     QuizQuestionCreate,
     QuizQuestionUpdate,
     QuizQuestionResponse,
+    QuizQuestionForUser,
     QuizSubmissionRequest,
     QuizSubmissionResponse,
 )
@@ -117,7 +118,7 @@ async def list_quiz_questions(
         )
 
 
-@router.get("/quiz/questions/active", response_model=List[QuizQuestionResponse])
+@router.get("/quiz/questions/active", response_model=List[QuizQuestionForUser])
 async def get_active_quiz_questions(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -130,24 +131,43 @@ async def get_active_quiz_questions(
             created_at = q.get("created_at")
             updated_at = q.get("updated_at")
             
-            if hasattr(created_at, 'timestamp'):
-                created_at = datetime.fromtimestamp(created_at.timestamp())
-            if hasattr(updated_at, 'timestamp'):
-                updated_at = datetime.fromtimestamp(updated_at.timestamp())
+            created_at_str = None
+            updated_at_str = None
+            
+            if created_at:
+                if hasattr(created_at, 'timestamp'):
+                    created_at_str = datetime.fromtimestamp(created_at.timestamp()).isoformat()
+                elif isinstance(created_at, str):
+                    try:
+                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        created_at_str = dt.isoformat()
+                    except:
+                        created_at_str = None
+                        
+            if updated_at:
+                if hasattr(updated_at, 'timestamp'):
+                    updated_at_str = datetime.fromtimestamp(updated_at.timestamp()).isoformat()
+                elif isinstance(updated_at, str):
+                    try:
+                        dt = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+                        updated_at_str = dt.isoformat()
+                    except:
+                        updated_at_str = None
             
             # Don't expose correct_answer_index to users
-            result.append({
-                "question_id": q["question_id"],
-                "question": q["question"],
-                "options": q["options"],
-                "tags": q.get("tags", []),
-                "created_at": created_at.isoformat() if created_at else None,
-                "updated_at": updated_at.isoformat() if updated_at else None,
-            })
+            result.append(QuizQuestionForUser(
+                question_id=q["question_id"],
+                question=q["question"],
+                options=q["options"],
+                tags=q.get("tags", []),
+                created_at=created_at_str,
+                updated_at=updated_at_str,
+            ))
         
         return result
     except Exception as e:
-        logger.error(f"Error getting active quiz questions: {e}")
+        import traceback
+        logger.error(f"Error getting active quiz questions: {e}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting active quiz questions: {str(e)}"
