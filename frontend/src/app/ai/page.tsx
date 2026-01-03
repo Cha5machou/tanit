@@ -9,6 +9,7 @@ import { api } from '@/services/api'
 import { API_V1_URL } from '@/lib/constants'
 import { getIdToken } from '@/services/auth'
 import { useAuth } from '@/hooks/useAuth'
+import { AdsContainer } from '@/components/AdsContainer'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -325,7 +326,10 @@ export default function AIChatPage() {
 
   return (
     <AuthGuard requireAuth={true} requireProfile={true}>
-      <div className="min-h-screen bg-gray-50 flex relative">
+      {/* Ads - Desktop sidebars and Mobile banner */}
+      <AdsContainer />
+      
+      <div className="min-h-screen bg-gray-50 flex relative pt-16 lg:pt-0">
         {/* Mobile Overlay */}
         {sidebarOpen && (
           <div
@@ -337,7 +341,9 @@ export default function AIChatPage() {
         {/* Sidebar - Responsive with toggle */}
         <aside
           className={`
-            fixed inset-y-0 left-0 z-50
+            fixed left-0 z-50
+            top-16 lg:top-0 lg:inset-y-0
+            h-[calc(100vh-4rem)] lg:h-screen
             w-64 bg-white border-r border-gray-200 flex flex-col
             transition-transform duration-300 ease-in-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -425,9 +431,9 @@ export default function AIChatPage() {
         </aside>
 
         {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col w-full lg:w-auto">
+        <div className="flex-1 flex flex-col w-full lg:w-auto lg:ml-64 lg:mr-64">
           {/* Chat Header - Sticky */}
-          <header className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+          <header className="sticky top-16 lg:top-0 z-10 bg-white border-b border-gray-200 px-4 sm:px-6 py-4 lg:ml-64 lg:mr-64">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {/* Menu button - visible on all screens */}

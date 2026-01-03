@@ -421,5 +421,197 @@ export const api = {
       method: 'DELETE',
     })
   },
+
+  // Ads endpoints (public - no auth required)
+  async listAds(position?: 'left' | 'right', activeOnly?: boolean): Promise<any[]> {
+    const params = new URLSearchParams()
+    if (position) params.append('position', position)
+    if (activeOnly) params.append('active_only', 'true')
+    
+    const url = `${API_V1_URL}/ads${params.toString() ? `?${params.toString()}` : ''}`
+    // Public endpoint - use regular fetch instead of fetchWithAuth
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText)
+      throw new ApiError(
+        response.status,
+        response.statusText,
+        `API Error: ${response.status} ${response.statusText} - ${errorText}`
+      )
+    }
+    
+    return response.json()
+  },
+
+  async getAd(adId: string): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/ads/${adId}`)
+    return response.json()
+  },
+
+  async createAd(data: {
+    name: string
+    description: string
+    link: string
+    position: 'left' | 'right'
+    slot: number
+    active: boolean
+    logo?: File
+  }): Promise<any> {
+    const token = await getIdToken()
+    const formData = new FormData()
+    formData.append('name', data.name)
+    formData.append('description', data.description)
+    formData.append('link', data.link)
+    formData.append('position', data.position)
+    formData.append('slot', data.slot.toString())
+    formData.append('active', data.active.toString())
+    
+    if (data.logo) {
+      formData.append('logo', data.logo)
+    }
+    
+    const response = await fetch(`${API_V1_URL}/ads`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText, 'Failed to create ad')
+    }
+    
+    return response.json()
+  },
+
+  async updateAd(adId: string, data: {
+    name?: string
+    description?: string
+    link?: string
+    position?: 'left' | 'right'
+    slot?: number
+    active?: boolean
+    logo?: File
+  }): Promise<any> {
+    const token = await getIdToken()
+    const formData = new FormData()
+    
+    if (data.name !== undefined) formData.append('name', data.name)
+    if (data.description !== undefined) formData.append('description', data.description)
+    if (data.link !== undefined) formData.append('link', data.link)
+    if (data.position !== undefined) formData.append('position', data.position)
+    if (data.slot !== undefined) formData.append('slot', data.slot.toString())
+    if (data.active !== undefined) formData.append('active', data.active.toString())
+    
+    if (data.logo) {
+      formData.append('logo', data.logo)
+    }
+    
+    const response = await fetch(`${API_V1_URL}/ads/${adId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    })
+    
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText, 'Failed to update ad')
+    }
+    
+    return response.json()
+  },
+
+  async deleteAd(adId: string): Promise<void> {
+    await fetchWithAuth(`${API_V1_URL}/ads/${adId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  // Quiz endpoints
+  async createQuizQuestion(data: {
+    question: string
+    options: string[]
+    correct_answer_index: number
+    tags: string[]
+    is_active: boolean
+  }): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/questions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    return response.json()
+  },
+
+  async listQuizQuestions(activeOnly: boolean = false): Promise<any[]> {
+    const params = activeOnly ? '?active_only=true' : ''
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/questions${params}`)
+    return response.json()
+  },
+
+  async getActiveQuizQuestions(): Promise<any[]> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/questions/active`)
+    return response.json()
+  },
+
+  async getQuizQuestion(questionId: string): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/questions/${questionId}`)
+    return response.json()
+  },
+
+  async updateQuizQuestion(questionId: string, data: {
+    question?: string
+    options?: string[]
+    correct_answer_index?: number
+    tags?: string[]
+    is_active?: boolean
+  }): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/questions/${questionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    return response.json()
+  },
+
+  async deleteQuizQuestion(questionId: string): Promise<void> {
+    await fetchWithAuth(`${API_V1_URL}/quiz/questions/${questionId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async checkQuizEligibility(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/check-eligibility`)
+    return response.json()
+  },
+
+  async submitQuiz(answers: Array<{
+    question_id: string
+    selected_index: number
+    time_taken: number
+  }>): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    })
+    return response.json()
+  },
+
+  async listQuizSubmissions(userId?: string): Promise<any[]> {
+    const params = userId ? `?user_id=${userId}` : ''
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/submissions${params}`)
+    return response.json()
+  },
+
+  async getQuizStatistics(): Promise<any> {
+    const response = await fetchWithAuth(`${API_V1_URL}/quiz/statistics`)
+    return response.json()
+  },
 }
 

@@ -3,40 +3,42 @@
 import { useState, useEffect } from 'react'
 import { RoleGuard } from '@/components/RoleGuard'
 import { Logo } from '@/components/Logo'
+import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { useRouter } from 'next/navigation'
 import { api } from '@/services/api'
+import { QuizQuestion, QuizQuestionCreate } from '@/types'
 
-interface Quiz {
-  id: string
-  question: string
-  answers: string[]
-  correct_answer: number
-}
-
-export default function QuizPage() {
+export default function QuizAdminPage() {
+  const { user, isAuthenticated, loading: authLoading } = useAuth()
   const router = useRouter()
-  const [quizzes, setQuizzes] = useState<Quiz[]>([])
+  const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [loading, setLoading] = useState(true)
+  const [editingQuestion, setEditingQuestion] = useState<QuizQuestion | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState({
     question: '',
-    answers: ['', '', '', ''],
-    correct_answer: 0,
+    options: ['', ''],
+    correct_answer_index: 0,
+    tags: [] as string[],
+    is_active: true,
+    newTag: '',
   })
 
   useEffect(() => {
-    loadQuizzes()
-  }, [])
+    // Only load questions when authenticated
+    if (!authLoading && isAuthenticated) {
+      loadQuestions()
+    }
+  }, [authLoading, isAuthenticated])
 
-  const loadQuizzes = async () => {
+  const loadQuestions = async () => {
     try {
-      // TODO: Implement API call
-      // const data = await api.getQuizzes()
-      // setQuizzes(data)
+      setLoading(true)
+      const allQuestions = await api.listQuizQuestions()
+      setQuestions(allQuestions)
     } catch (error) {
-      console.error('Error loading quizzes:', error)
+      console.error('Error loading questions:', error)
     } finally {
       setLoading(false)
     }
@@ -45,114 +47,322 @@ export default function QuizPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      // TODO: Implement API call
-      // await api.createQuiz(formData)
-      setShowForm(false)
-      loadQuizzes()
+      // Ensure tags is always an array
+      const tagsToSave = Array.isArray(formData.tags) ? formData.tags : []
+      
+      if (editingQuestion) {
+        await api.updateQuizQuestion(editingQuestion.question_id, {
+          question: formData.question,
+          options: formData.options,
+          correct_answer_index: formData.correct_answer_index,
+          tags: tagsToSave,
+          is_active: formData.is_active,
+        })
+      } else {
+        await api.createQuizQuestion({
+          question: formData.question,
+          options: formData.options,
+          correct_answer_index: formData.correct_answer_index,
+          tags: tagsToSave,
+          is_active: formData.is_active,
+        })
+      }
+      await loadQuestions()
+      resetForm()
     } catch (error) {
-      console.error('Error creating quiz:', error)
+      console.error('Error saving question:', error)
+      alert('Erreur lors de la sauvegarde')
     }
+  }
+
+  const handleEdit = (question: QuizQuestion) => {
+    setEditingQuestion(question)
+    setFormData({
+      question: question.question,
+      options: [...question.options],
+      correct_answer_index: question.correct_answer_index,
+      tags: Array.isArray(question.tags) ? [...question.tags] : [],
+      is_active: question.is_active,
+      newTag: '',
+    })
+    setShowForm(true)
+  }
+
+  const handleDelete = async (questionId: string) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette question ?')) {
+      return
+    }
+    try {
+      await api.deleteQuizQuestion(questionId)
+      await loadQuestions()
+    } catch (error) {
+      console.error('Error deleting question:', error)
+      alert('Erreur lors de la suppression')
+    }
+  }
+
+  const resetForm = () => {
+    setEditingQuestion(null)
+    setShowForm(false)
+    setFormData({
+      question: '',
+      options: ['', ''],
+      correct_answer_index: 0,
+      tags: [],
+      is_active: true,
+      newTag: '',
+    })
+  }
+
+  const addOption = () => {
+    if (formData.options.length < 6) {
+      setFormData({ ...formData, options: [...formData.options, ''] })
+    }
+  }
+
+  const removeOption = (index: number) => {
+    if (formData.options.length > 2) {
+      const newOptions = formData.options.filter((_, i) => i !== index)
+      const newCorrectIndex = formData.correct_answer_index >= newOptions.length 
+        ? newOptions.length - 1 
+        : formData.correct_answer_index
+      setFormData({ ...formData, options: newOptions, correct_answer_index: newCorrectIndex })
+    }
+  }
+
+  const updateOption = (index: number, value: string) => {
+    const newOptions = [...formData.options]
+    newOptions[index] = value
+    setFormData({ ...formData, options: newOptions })
+  }
+
+  const addTag = () => {
+    if (formData.newTag.trim() && !formData.tags.includes(formData.newTag.trim())) {
+      setFormData({
+        ...formData,
+        tags: [...formData.tags, formData.newTag.trim()],
+        newTag: '',
+      })
+    }
+  }
+
+  const removeTag = (tag: string) => {
+    setFormData({
+      ...formData,
+      tags: formData.tags.filter(t => t !== tag),
+    })
   }
 
   return (
     <RoleGuard requiredRole="admin">
-      <div className="min-h-screen bg-gray-100">
-        <header className="bg-white shadow">
-          <div className="mx-auto max-w-7xl px-4 py-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Logo size="md" />
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">
-                    Quiz
-                  </h1>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Gérez les questions et réponses des quiz
-                  </p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="primary" onClick={() => setShowForm(!showForm)}>
-                  {showForm ? 'Annuler' : 'Ajouter une question'}
-                </Button>
-                <Button variant="outline" onClick={() => router.push('/admin')}>
-                  Retour
-                </Button>
-              </div>
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-white border-b px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Logo size="md" />
+              <h1 className="text-2xl font-bold">Gestion des Quiz</h1>
             </div>
+            <Button onClick={() => router.push('/admin')}>Retour</Button>
           </div>
         </header>
 
-        <main className="mx-auto max-w-7xl px-4 py-8">
+        <main className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-semibold">Questions de Quiz</h2>
+            <Button onClick={() => setShowForm(true)}>+ Nouvelle Question</Button>
+          </div>
+
           {showForm && (
-            <div className="mb-6 rounded-lg bg-white p-6 shadow">
-              <h2 className="text-lg font-semibold mb-4">Nouvelle question</h2>
+            <div className="bg-white rounded-lg shadow p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-4">
+                {editingQuestion ? 'Modifier la question' : 'Nouvelle question'}
+              </h3>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <Input
-                  label="Question"
-                  value={formData.question}
-                  onChange={(e) => setFormData({ ...formData, question: e.target.value })}
-                  required
-                />
-                {formData.answers.map((answer, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Input
-                      label={`Réponse ${index + 1}`}
-                      value={answer}
-                      onChange={(e) => {
-                        const newAnswers = [...formData.answers]
-                        newAnswers[index] = e.target.value
-                        setFormData({ ...formData, answers: newAnswers })
-                      }}
-                      required
-                    />
+                <div>
+                  <label className="block text-sm font-medium mb-2">Question</label>
+                  <textarea
+                    value={formData.question}
+                    onChange={(e) => setFormData({ ...formData, question: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    rows={3}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Options de réponse</label>
+                  {formData.options.map((option, index) => (
+                    <div key={index} className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={option}
+                        onChange={(e) => updateOption(index, e.target.value)}
+                        className="flex-1 px-3 py-2 border rounded-lg"
+                        placeholder={`Option ${index + 1}`}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, correct_answer_index: index })}
+                        className={`px-4 py-2 rounded-lg ${
+                          formData.correct_answer_index === index
+                            ? 'bg-green-500 text-white'
+                            : 'bg-gray-200'
+                        }`}
+                      >
+                        Correcte
+                      </button>
+                      {formData.options.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => removeOption(index)}
+                          className="px-4 py-2 bg-red-500 text-white rounded-lg"
+                        >
+                          Supprimer
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {formData.options.length < 6 && (
+                    <Button type="button" onClick={addOption} variant="outline">
+                      + Ajouter une option
+                    </Button>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Tags</label>
+                  <div className="flex gap-2 mb-2">
                     <input
-                      type="radio"
-                      name="correct_answer"
-                      checked={formData.correct_answer === index}
-                      onChange={() => setFormData({ ...formData, correct_answer: index })}
-                      className="mt-6"
+                      type="text"
+                      value={formData.newTag}
+                      onChange={(e) => setFormData({ ...formData, newTag: e.target.value })}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                      className="flex-1 px-3 py-2 border rounded-lg"
+                      placeholder="Ajouter un tag"
                     />
-                    <label className="mt-6 text-sm">Correcte</label>
+                    <Button type="button" onClick={addTag}>Ajouter</Button>
                   </div>
-                ))}
-                <Button type="submit" variant="primary">Créer</Button>
+                  <div className="flex flex-wrap gap-2">
+                    {formData.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm flex items-center gap-2"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={() => removeTag(tag)}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={formData.is_active}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="is_active" className="text-sm font-medium">
+                    Question active
+                  </label>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button type="submit">
+                    {editingQuestion ? 'Modifier' : 'Créer'}
+                  </Button>
+                  <Button type="button" onClick={resetForm} variant="outline">
+                    Annuler
+                  </Button>
+                </div>
               </form>
             </div>
           )}
 
-          <div className="rounded-lg bg-white shadow">
-            <div className="p-6">
-              <h2 className="text-lg font-semibold mb-4">Liste des questions</h2>
-              {loading ? (
-                <p className="text-gray-500">Chargement...</p>
-              ) : quizzes.length === 0 ? (
-                <p className="text-gray-500">Aucune question</p>
-              ) : (
-                <div className="space-y-4">
-                  {quizzes.map((quiz) => (
-                    <div key={quiz.id} className="border rounded-lg p-4">
-                      <h3 className="font-semibold mb-2">{quiz.question}</h3>
-                      <ul className="space-y-1">
-                        {quiz.answers.map((answer, index) => (
-                          <li key={index} className={`text-sm ${index === quiz.correct_answer ? 'text-green-600 font-semibold' : 'text-gray-600'}`}>
-                            {index + 1}. {answer} {index === quiz.correct_answer && '✓'}
-                          </li>
-                        ))}
-                      </ul>
-                      <div className="mt-4 flex gap-2">
-                        <Button variant="outline" size="sm">Modifier</Button>
-                        <Button variant="outline" size="sm">Supprimer</Button>
-                      </div>
-                    </div>
+          {loading ? (
+            <div className="text-center py-8">Chargement...</div>
+          ) : (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[800px]">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase w-48">Question</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Options</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tags</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {questions.map((question) => (
+                      <tr key={question.question_id}>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-gray-900 break-words max-w-xs">{question.question}</div>
+                        </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-500">
+                          {question.options.map((opt, idx) => (
+                            <div key={idx} className={idx === question.correct_answer_index ? 'font-bold text-green-600' : ''}>
+                              {idx + 1}. {opt} {idx === question.correct_answer_index && '✓'}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {Array.isArray(question.tags) && question.tags.length > 0 ? (
+                            question.tags.map((tag) => (
+                              <span key={tag} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                                {tag}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs text-gray-400">Aucun tag</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          question.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {question.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => handleEdit(question)}
+                          className="text-blue-600 hover:text-blue-900 mr-4"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => handleDelete(question.question_id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Supprimer
+                        </button>
+                      </td>
+                    </tr>
                   ))}
-                </div>
+                  </tbody>
+                </table>
+              </div>
+              {questions.length === 0 && (
+                <div className="text-center py-8 text-gray-500">Aucune question</div>
               )}
             </div>
-          </div>
+          )}
         </main>
       </div>
     </RoleGuard>
   )
 }
-

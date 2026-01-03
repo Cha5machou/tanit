@@ -342,14 +342,16 @@ async def get_engagement_analytics(
         
         # Exit Pages: Where users leave most (pages with no next page visit within session)
         # Entry Pages: Where users arrive first
-        user_visits = defaultdict(list)
+        # Group by session_id to find first and last page per session
+        session_visits = defaultdict(list)
         for visit in page_visits:
-            user_id = visit.get("user_id")
+            session_id = visit.get("session_id")
             page_path = visit.get("page_path")
             start_time = visit.get("start_time")
             previous_page = visit.get("previous_page")
             
-            if user_id and page_path and start_time:
+            # Require session_id to group by session
+            if session_id and page_path and start_time:
                 if isinstance(start_time, str):
                     try:
                         start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
@@ -358,7 +360,7 @@ async def get_engagement_analytics(
                 elif not isinstance(start_time, datetime):
                     continue
                 
-                user_visits[user_id].append({
+                session_visits[session_id].append({
                     "page": page_path,
                     "previous": previous_page,
                     "time": start_time,
@@ -367,17 +369,19 @@ async def get_engagement_analytics(
         exit_pages = defaultdict(int)
         entry_pages = defaultdict(int)
         
-        for user_id, visits in user_visits.items():
+        # For each session, find the first page (entry) and last page (exit)
+        for session_id, visits in session_visits.items():
+            if not visits:
+                continue
+                
+            # Sort visits by time within the session
             visits.sort(key=lambda x: x["time"])
             
-            # First page is entry
-            if visits:
-                entry_pages[visits[0]["page"]] += 1
+            # First page in session is entry page
+            entry_pages[visits[0]["page"]] += 1
             
-            # Last page is exit (if no visit within 30 minutes)
-            if visits:
-                last_visit = visits[-1]
-                exit_pages[last_visit["page"]] += 1
+            # Last page in session is exit page
+            exit_pages[visits[-1]["page"]] += 1
         
         exit_pages_data = [{"page": k, "count": v} for k, v in sorted(exit_pages.items(), key=lambda x: x[1], reverse=True)[:10]]
         entry_pages_data = [{"page": k, "count": v} for k, v in sorted(entry_pages.items(), key=lambda x: x[1], reverse=True)[:10]]

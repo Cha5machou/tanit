@@ -65,6 +65,11 @@ export default function AdminPage() {
               <h2 className="text-lg font-semibold">Monitoring & Analytics</h2>
               <p className="mt-2 text-gray-600">Statistiques d'utilisation et analytics détaillés</p>
             </div>
+            
+            <div className="rounded-lg bg-white p-6 shadow hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push('/admin/ads')}>
+              <h2 className="text-lg font-semibold">Publicités</h2>
+              <p className="mt-2 text-gray-600">Gérer les annonces publicitaires dans les sidebars</p>
+            </div>
           </div>
         </main>
       </div>

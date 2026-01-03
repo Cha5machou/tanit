@@ -8,6 +8,7 @@ import { Logo } from '@/components/Logo'
 import { api } from '@/services/api'
 import { POI } from '@/types'
 import dynamic from 'next/dynamic'
+import { AdsContainer } from '@/components/AdsContainer'
 
 // Dynamically import Leaflet only on client side to avoid SSR issues
 const MapComponent = dynamic(() => import('@/components/MapComponent'), {
@@ -52,8 +53,11 @@ export default function MapPage() {
 
   return (
     <AuthGuard requireAuth={true} requireProfile={true}>
-      <div className="flex h-screen flex-col">
-        <header className="border-b bg-white px-4 py-3 flex items-center justify-between">
+      {/* Ads - Desktop sidebars and Mobile banner */}
+      <AdsContainer />
+      
+      <div className="flex h-screen flex-col pt-16 lg:pt-0">
+        <header className="border-b bg-white px-4 py-3 flex items-center justify-between lg:ml-64 lg:mr-64">
           <div className="flex items-center gap-3">
             <Logo size="md" />
             <h1 className="text-xl font-semibold">Carte interactive</h1>
@@ -66,7 +70,7 @@ export default function MapPage() {
           </button>
         </header>
         
-        <main className="flex-1 relative">
+        <main className="flex-1 relative lg:ml-64 lg:mr-64">
           <MapComponent pois={pois} onPoiClick={setSelectedPoi} />
           
           {selectedPoi && (

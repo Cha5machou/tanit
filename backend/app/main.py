@@ -10,7 +10,7 @@ except Exception as e:
     print(f"Warning: Firebase initialization failed: {e}")
     print("Make sure Firebase credentials are configured in .env file")
 
-from app.api.routes import auth, ai, monitoring, analytics, ai_analytics, poi
+from app.api.routes import auth, ai, monitoring, analytics, ai_analytics, poi, routing, ads, quiz
 
 app = FastAPI(
     title="City Platform API",
@@ -39,6 +39,9 @@ app.include_router(monitoring.router, prefix="/api/v1/monitoring", tags=["monito
 app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
 app.include_router(ai_analytics.router, prefix="/api/v1", tags=["ai-analytics"])
 app.include_router(poi.router, prefix="/api/v1", tags=["poi"])
+app.include_router(routing.router, prefix="/api/v1", tags=["routing"])
+app.include_router(ads.router, prefix="/api/v1", tags=["ads"])
+app.include_router(quiz.router, prefix="/api/v1", tags=["quiz"])
 
 
 @app.get("/")

@@ -6,14 +6,28 @@ export function middleware(request: NextRequest) {
   const publicRoutes = ['/login', '/']
   const { pathname } = request.nextUrl
 
+  // Create response
+  const response = NextResponse.next()
+
+  // Configure headers for Firebase Auth popup compatibility
+  // This prevents Cross-Origin-Opener-Policy warnings
+  response.headers.set(
+    'Cross-Origin-Opener-Policy',
+    'same-origin-allow-popups'
+  )
+  response.headers.set(
+    'Cross-Origin-Embedder-Policy',
+    'unsafe-none'
+  )
+
   // Allow public routes
   if (publicRoutes.includes(pathname)) {
-    return NextResponse.next()
+    return response
   }
 
   // For other routes, authentication will be handled client-side
   // using the useAuth hook and redirecting to /login if needed
-  return NextResponse.next()
+  return response
 }
 
 export const config = {

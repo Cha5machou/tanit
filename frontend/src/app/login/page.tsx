@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useProfile } from '@/hooks/useProfile'
 import { signInWithGoogle } from '@/services/auth'
 import { Button } from '@/components/ui/Button'
+import { AdsContainer } from '@/components/AdsContainer'
 
 export default function LoginPage() {
   const [loading, setLoading] = useState<boolean>(false)
@@ -55,7 +56,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 pt-16 lg:pt-0 lg:pl-80 lg:pr-80">
+      {/* Ads - Desktop sidebars and Mobile banner */}
+      <AdsContainer />
+      
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-lg">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-900">

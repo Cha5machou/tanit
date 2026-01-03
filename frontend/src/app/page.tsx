@@ -6,6 +6,7 @@ import { useProfile } from '@/hooks/useProfile'
 import { AuthGuard } from '@/components/AuthGuard'
 import { Button } from '@/components/ui/Button'
 import { useRouter } from 'next/navigation'
+import { AdsContainer } from '@/components/AdsContainer'
 
 export default function Home() {
   const { user, signOut, isAuthenticated, loading: authLoading } = useAuth()
@@ -33,7 +34,10 @@ export default function Home() {
 
   return (
     <AuthGuard requireAuth={true}>
-      <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 md:p-16 lg:p-24">
+      {/* Ads - Desktop sidebars and Mobile banner */}
+      <AdsContainer />
+      
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 md:p-16 lg:p-24 lg:pl-80 lg:pr-80 pt-16 lg:pt-24">
         <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-blue-600">
           City Platform
         </h1>
@@ -55,6 +59,9 @@ export default function Home() {
               </Button>
               <Button onClick={() => router.push('/ai')} variant="outline" className="w-full sm:w-48 sm:min-w-[192px] sm:max-w-[192px]">
                 Assistant IA
+              </Button>
+              <Button onClick={() => router.push('/quiz')} variant="outline" className="w-full sm:w-48 sm:min-w-[192px] sm:max-w-[192px]">
+                Quiz
               </Button>
               {user.role === 'admin' && (
                 <Button onClick={() => router.push('/admin')} variant="outline" className="w-full sm:w-48 sm:min-w-[192px] sm:max-w-[192px]">

@@ -203,7 +203,7 @@ function SankeyChart({ data }: { data: { nodes: Array<{ name: string, level?: nu
 export default function MonitoringPage() {
   const router = useRouter()
   const { isAuthenticated, loading: authLoading } = useAuth()
-  const [activeTab, setActiveTab] = useState<'analytics' | 'ai'>('analytics')
+  const [activeTab, setActiveTab] = useState<'analytics' | 'ai' | 'quiz'>('analytics')
   const [analyticsTab, setAnalyticsTab] = useState<'overview' | 'traffic' | 'engagement' | 'acquisition'>('overview')
   const [aiTab, setAiTab] = useState<'conversations' | 'performance' | 'traces'>('conversations')
   const [trafficPeriod, setTrafficPeriod] = useState<'day' | 'week' | 'month'>('day')
@@ -219,6 +219,9 @@ export default function MonitoringPage() {
   const [performanceData, setPerformanceData] = useState<any>(null)
   const [tracesData, setTracesData] = useState<any>(null)
   
+  // Quiz data
+  const [quizStatistics, setQuizStatistics] = useState<any>(null)
+  
   const [loading, setLoading] = useState(true)
   const [closingVisits, setClosingVisits] = useState(false)
 
@@ -227,7 +230,7 @@ export default function MonitoringPage() {
     if (!authLoading && isAuthenticated) {
       loadData()
     }
-  }, [analyticsTab, aiTab, trafficPeriod, isAuthenticated, authLoading])
+  }, [analyticsTab, aiTab, trafficPeriod, activeTab, isAuthenticated, authLoading])
 
   const loadData = async () => {
     setLoading(true)
@@ -246,6 +249,9 @@ export default function MonitoringPage() {
           const data = await api.getAcquisitionAnalytics()
           setAcquisitionData(data)
         }
+      } else if (activeTab === 'quiz') {
+        const data = await api.getQuizStatistics()
+        setQuizStatistics(data)
       } else if (activeTab === 'ai') {
         if (aiTab === 'conversations') {
           const data = await api.getAIConversationsAnalytics()
@@ -352,6 +358,16 @@ export default function MonitoringPage() {
                   }`}
                 >
                   AI Usage Dashboard
+                </button>
+                <button
+                  onClick={() => setActiveTab('quiz')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'quiz'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Quiz Statistics
                 </button>
               </nav>
             </div>
@@ -861,6 +877,73 @@ export default function MonitoringPage() {
                         </ResponsiveContainer>
                       </div>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'quiz' && (
+                <div>
+                  {loading ? (
+                    <div className="text-center py-8">Chargement...</div>
+                  ) : quizStatistics ? (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-sm font-medium text-gray-500">Total Quiz Effectués</h3>
+                          <p className="text-3xl font-bold text-gray-900 mt-2">
+                            {quizStatistics.total_quizzes_taken}
+                          </p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-sm font-medium text-gray-500">Score Moyen</h3>
+                          <p className="text-3xl font-bold text-blue-600 mt-2">
+                            {quizStatistics.average_score}%
+                          </p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-sm font-medium text-gray-500">Moyenne par Utilisateur</h3>
+                          <p className="text-3xl font-bold text-green-600 mt-2">
+                            {quizStatistics.average_per_user}
+                          </p>
+                        </div>
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-sm font-medium text-gray-500">Utilisateurs Uniques</h3>
+                          <p className="text-3xl font-bold text-purple-600 mt-2">
+                            {quizStatistics.total_users}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-lg font-semibold mb-4">Distribution des Scores</h3>
+                          <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={quizStatistics.score_distribution}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="range" />
+                              <YAxis />
+                              <Tooltip />
+                              <Bar dataKey="count" fill="#8884d8" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-lg font-semibold mb-4">Quiz par Date</h3>
+                          <ResponsiveContainer width="100%" height={300}>
+                            <LineChart data={quizStatistics.quizzes_by_date}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis dataKey="date" angle={-45} textAnchor="end" height={80} />
+                              <YAxis />
+                              <Tooltip />
+                              <Line type="monotone" dataKey="count" stroke="#8884d8" strokeWidth={2} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">Aucune donnée disponible</div>
                   )}
                 </div>
               )}

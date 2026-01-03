@@ -789,4 +789,221 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error deleting POI {poi_id}: {e}")
             return False
+    
+    # Ads (Advertisements) methods
+    @staticmethod
+    def create_ad(ad_data: Dict[str, Any]) -> str:
+        """Create a new ad"""
+        try:
+            db = get_db()
+            ad_data["created_at"] = firestore.SERVER_TIMESTAMP
+            ad_data["updated_at"] = firestore.SERVER_TIMESTAMP
+            
+            doc_ref = db.collection("ads").document()
+            doc_ref.set(ad_data)
+            return doc_ref.id
+        except Exception as e:
+            logger.error(f"Error creating ad: {e}")
+            raise
+    
+    @staticmethod
+    def get_ad(ad_id: str) -> Optional[Dict[str, Any]]:
+        """Get an ad by ID"""
+        try:
+            db = get_db()
+            doc_ref = db.collection("ads").document(ad_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                data = doc.to_dict()
+                data["ad_id"] = doc.id
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error getting ad {ad_id}: {e}")
+            return None
+    
+    @staticmethod
+    def list_ads(position: Optional[str] = None, active_only: bool = False) -> List[Dict[str, Any]]:
+        """List all ads, optionally filtered by position and active status"""
+        try:
+            db = get_db()
+            ads_ref = db.collection("ads")
+            
+            # Apply filters
+            if position:
+                ads_ref = ads_ref.where("position", "==", position)
+            if active_only:
+                ads_ref = ads_ref.where("active", "==", True)
+            
+            docs = ads_ref.stream()
+            
+            ads = []
+            for doc in docs:
+                data = doc.to_dict()
+                data["ad_id"] = doc.id
+                ads.append(data)
+            
+            # Sort by position and slot
+            ads.sort(key=lambda x: (x.get("position", ""), x.get("slot", 0)))
+            
+            return ads
+        except Exception as e:
+            logger.error(f"Error listing ads: {e}")
+            return []
+    
+    @staticmethod
+    def update_ad(ad_id: str, updates: Dict[str, Any]) -> bool:
+        """Update an ad"""
+        try:
+            db = get_db()
+            updates["updated_at"] = firestore.SERVER_TIMESTAMP
+            doc_ref = db.collection("ads").document(ad_id)
+            doc_ref.update(updates)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating ad {ad_id}: {e}")
+            return False
+    
+    @staticmethod
+    def delete_ad(ad_id: str) -> bool:
+        """Delete an ad"""
+        try:
+            db = get_db()
+            doc_ref = db.collection("ads").document(ad_id)
+            doc_ref.delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting ad {ad_id}: {e}")
+            return False
+    
+    # Quiz Questions methods
+    @staticmethod
+    def create_quiz_question(question_data: Dict[str, Any]) -> str:
+        """Create a new quiz question"""
+        try:
+            db = get_db()
+            question_id = str(uuid.uuid4())
+            question_data["question_id"] = question_id
+            question_data["created_at"] = firestore.SERVER_TIMESTAMP
+            question_data["updated_at"] = firestore.SERVER_TIMESTAMP
+            doc_ref = db.collection("quiz_questions").document(question_id)
+            doc_ref.set(question_data)
+            return question_id
+        except Exception as e:
+            logger.error(f"Error creating quiz question: {e}")
+            raise
+    
+    @staticmethod
+    def get_quiz_question(question_id: str) -> Optional[Dict[str, Any]]:
+        """Get a quiz question by ID"""
+        try:
+            db = get_db()
+            doc_ref = db.collection("quiz_questions").document(question_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            logger.error(f"Error getting quiz question {question_id}: {e}")
+            return None
+    
+    @staticmethod
+    def list_quiz_questions(active_only: bool = False) -> List[Dict[str, Any]]:
+        """List all quiz questions"""
+        try:
+            db = get_db()
+            query = db.collection("quiz_questions")
+            if active_only:
+                query = query.where("is_active", "==", True)
+            docs = query.stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            logger.error(f"Error listing quiz questions: {e}")
+            return []
+    
+    @staticmethod
+    def update_quiz_question(question_id: str, updates: Dict[str, Any]) -> bool:
+        """Update a quiz question"""
+        try:
+            db = get_db()
+            updates["updated_at"] = firestore.SERVER_TIMESTAMP
+            doc_ref = db.collection("quiz_questions").document(question_id)
+            doc_ref.update(updates)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating quiz question {question_id}: {e}")
+            return False
+    
+    @staticmethod
+    def delete_quiz_question(question_id: str) -> bool:
+        """Delete a quiz question"""
+        try:
+            db = get_db()
+            doc_ref = db.collection("quiz_questions").document(question_id)
+            doc_ref.delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting quiz question {question_id}: {e}")
+            return False
+    
+    # Quiz Submissions methods
+    @staticmethod
+    def create_quiz_submission(submission_data: Dict[str, Any]) -> str:
+        """Create a new quiz submission"""
+        try:
+            db = get_db()
+            submission_id = str(uuid.uuid4())
+            submission_data["submission_id"] = submission_id
+            submission_data["submitted_at"] = firestore.SERVER_TIMESTAMP
+            doc_ref = db.collection("quiz_submissions").document(submission_id)
+            doc_ref.set(submission_data)
+            return submission_id
+        except Exception as e:
+            logger.error(f"Error creating quiz submission: {e}")
+            raise
+    
+    @staticmethod
+    def get_user_quiz_submission_today(user_id: str) -> Optional[Dict[str, Any]]:
+        """Check if user has already taken a quiz today"""
+        try:
+            db = get_db()
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
+            
+            query = db.collection("quiz_submissions").where("user_id", "==", user_id).where("submitted_at", ">=", today_start).where("submitted_at", "<", today_end).limit(1)
+            docs = list(query.stream())
+            if docs:
+                return docs[0].to_dict()
+            return None
+        except Exception as e:
+            logger.error(f"Error checking user quiz submission today: {e}")
+            return None
+    
+    @staticmethod
+    def get_quiz_submission(submission_id: str) -> Optional[Dict[str, Any]]:
+        """Get a quiz submission by ID"""
+        try:
+            db = get_db()
+            doc_ref = db.collection("quiz_submissions").document(submission_id)
+            doc = doc_ref.get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            logger.error(f"Error getting quiz submission {submission_id}: {e}")
+            return None
+    
+    @staticmethod
+    def list_quiz_submissions(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List quiz submissions, optionally filtered by user"""
+        try:
+            db = get_db()
+            query = db.collection("quiz_submissions")
+            if user_id:
+                query = query.where("user_id", "==", user_id)
+            docs = query.order_by("submitted_at", direction=firestore.Query.DESCENDING).stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            logger.error(f"Error listing quiz submissions: {e}")
+            return []
 
