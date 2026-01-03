@@ -81,6 +81,12 @@ export default function QuizPage() {
       if (eligibilityData.can_take_quiz) {
         await loadQuestions()
       } else {
+        // User already took quiz today - load their results
+        if (eligibilityData.today_submission) {
+          setSubmission(eligibilityData.today_submission)
+          setIsQuizComplete(true)
+          await loadLeaderboard()
+        }
         setLoading(false)
       }
     } catch (error) {

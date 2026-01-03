@@ -128,5 +128,6 @@ export interface QuizSubmission {
 export interface QuizEligibility {
   can_take_quiz: boolean
   already_taken_today: boolean
+  today_submission?: QuizSubmission
 }
 

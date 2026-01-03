@@ -327,15 +327,37 @@ async def delete_quiz_question(
 async def check_quiz_eligibility(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    """Check if user can take the quiz today"""
+    """Check if user can take the quiz today and return today's submission if exists"""
     try:
         user_id = current_user["uid"]
         today_submission = FirestoreService.get_user_quiz_submission_today(user_id)
         
-        return {
+        result = {
             "can_take_quiz": today_submission is None,
             "already_taken_today": today_submission is not None,
         }
+        
+        # If user already took quiz today, include the submission data
+        if today_submission:
+            submitted_at = today_submission.get("submitted_at")
+            if hasattr(submitted_at, 'timestamp'):
+                submitted_at = datetime.fromtimestamp(submitted_at.timestamp())
+            elif isinstance(submitted_at, str):
+                try:
+                    submitted_at = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
+                except:
+                    submitted_at = None
+            
+            result["today_submission"] = {
+                "submission_id": today_submission["submission_id"],
+                "score": today_submission["score"],
+                "total_questions": today_submission["total_questions"],
+                "correct_answers": today_submission["correct_answers"],
+                "submitted_at": submitted_at.isoformat() if submitted_at else None,
+                "answers": today_submission.get("answers", []),
+            }
+        
+        return result
     except Exception as e:
         logger.error(f"Error checking quiz eligibility: {e}")
         raise HTTPException(
@@ -485,6 +507,7 @@ async def get_quiz_statistics(
                 "total_users": 0,
                 "score_distribution": [],
                 "quizzes_by_date": [],
+                "submissions_with_users": [],
             }
         
         # Total quizzes taken
@@ -555,6 +578,74 @@ async def get_quiz_statistics(
             for k, v in sorted(quizzes_by_date_dict.items())
         ]
         
+        # Get submissions with user names (masked for GDPR)
+        submissions_with_users = []
+        for s in submissions:
+            user_id = s["user_id"]
+            user_data = FirestoreService.get_user(user_id)
+            
+            # Mask user name for GDPR compliance
+            display_name = "Utilisateur anonyme"
+            try:
+                # Try to get user from Firebase Auth
+                from firebase_admin import auth as firebase_auth
+                try:
+                    firebase_user = firebase_auth.get_user(user_id)
+                    name = firebase_user.display_name
+                    if name:
+                        # Format: FirstName initial + masked surname
+                        name_parts = name.split(' ')
+                        if len(name_parts) >= 2:
+                            first_name = name_parts[0]
+                            surname = ' '.join(name_parts[1:])
+                            # Mask surname: first letter + stars
+                            masked_surname = surname[0] + '*' * max(len(surname) - 1, 1) if len(surname) > 1 else '*'
+                            display_name = f"{first_name[0].upper()}. {masked_surname}"
+                        else:
+                            # Single name - mask it
+                            display_name = name[0] + '*' * max(len(name) - 1, 1) if len(name) > 1 else '*'
+                except Exception:
+                    # Fallback to email if Firebase Auth fails
+                    if user_data:
+                        email = user_data.get("email", "")
+                        if email:
+                            email_parts = email.split("@")
+                            if len(email_parts) > 0:
+                                display_name = f"{email_parts[0][:2]}***"
+            except Exception:
+                # Fallback to email
+                if user_data:
+                    email = user_data.get("email", "")
+                    if email:
+                        email_parts = email.split("@")
+                        if len(email_parts) > 0:
+                            display_name = f"{email_parts[0][:2]}***"
+            
+            submitted_at = s.get("submitted_at")
+            submitted_at_str = None
+            if submitted_at:
+                if hasattr(submitted_at, 'timestamp'):
+                    submitted_at_str = datetime.fromtimestamp(submitted_at.timestamp()).isoformat()
+                elif isinstance(submitted_at, str):
+                    try:
+                        dt = datetime.fromisoformat(submitted_at.replace('Z', '+00:00'))
+                        submitted_at_str = dt.isoformat()
+                    except:
+                        submitted_at_str = None
+            
+            submissions_with_users.append({
+                "submission_id": s["submission_id"],
+                "user_id": user_id,
+                "display_name": display_name,
+                "score": s["score"],
+                "total_questions": s["total_questions"],
+                "correct_answers": s["correct_answers"],
+                "submitted_at": submitted_at_str,
+            })
+        
+        # Sort by submitted_at descending (most recent first)
+        submissions_with_users.sort(key=lambda x: x["submitted_at"] or "", reverse=True)
+        
         return {
             "total_quizzes_taken": total_quizzes_taken,
             "average_score": average_score,
@@ -562,6 +653,7 @@ async def get_quiz_statistics(
             "total_users": total_users,
             "score_distribution": score_distribution,
             "quizzes_by_date": quizzes_by_date,
+            "submissions_with_users": submissions_with_users,
         }
     except Exception as e:
         logger.error(f"Error getting quiz statistics: {e}")

@@ -941,6 +941,50 @@ export default function MonitoringPage() {
                           </ResponsiveContainer>
                         </div>
                       </div>
+
+                      {quizStatistics.submissions_with_users && quizStatistics.submissions_with_users.length > 0 && (
+                        <div className="bg-white p-6 rounded-lg shadow">
+                          <h3 className="text-lg font-semibold mb-4">Historique des Quiz</h3>
+                          <div className="overflow-x-auto">
+                            <table className="w-full">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Utilisateur</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Score</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Réponses</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {quizStatistics.submissions_with_users.map((submission: any) => (
+                                  <tr key={submission.submission_id}>
+                                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                      {submission.display_name}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-900">
+                                      <span className="font-semibold">{submission.score}%</span>
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-500">
+                                      {submission.correct_answers} / {submission.total_questions}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-500">
+                                      {submission.submitted_at 
+                                        ? new Date(submission.submitted_at).toLocaleDateString('fr-FR', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric',
+                                            hour: '2-digit',
+                                            minute: '2-digit'
+                                          })
+                                        : 'N/A'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">Aucune donnée disponible</div>
