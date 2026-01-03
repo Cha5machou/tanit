@@ -75,13 +75,15 @@ export default function QuizPage() {
 
   const checkEligibility = async () => {
     try {
+      setLoading(true)
       const eligibilityData = await api.checkQuizEligibility()
       setEligibility(eligibilityData)
       
       if (eligibilityData.can_take_quiz) {
+        // User can take quiz - load questions
         await loadQuestions()
       } else {
-        // User already took quiz today - load their results
+        // User already took quiz today - load their results immediately
         if (eligibilityData.today_submission) {
           setSubmission(eligibilityData.today_submission)
           setIsQuizComplete(true)
@@ -320,30 +322,8 @@ export default function QuizPage() {
     )
   }
 
-  if (eligibility && !eligibility.can_take_quiz) {
-    return (
-      <AuthGuard requireAuth={true} requireProfile={true}>
-        <AdsContainer />
-        <div className="flex min-h-screen flex-col items-center justify-center p-4 pt-16 lg:pt-0 lg:pl-64 lg:pr-64">
-          <Logo size="lg" />
-          <h1 className="text-3xl font-bold mt-8 mb-4">Quiz</h1>
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 max-w-md text-center">
-            <p className="text-lg font-semibold text-yellow-800 mb-2">
-              Vous avez déjà fait le quiz aujourd'hui
-            </p>
-            <p className="text-yellow-700">
-              Vous pouvez refaire le quiz demain. Revenez pour tester vos connaissances !
-            </p>
-          </div>
-          <Button onClick={() => router.push('/')} className="mt-6">
-            Retour à l'accueil
-          </Button>
-        </div>
-      </AuthGuard>
-    )
-  }
-
-  if (isQuizComplete && submission) {
+  // Show results if quiz is complete OR if user already took quiz today
+  if ((isQuizComplete && submission) || (eligibility && !eligibility.can_take_quiz && submission)) {
     const comparison = getComparisonMessage()
     const userPosition = getCurrentUserPosition()
 
